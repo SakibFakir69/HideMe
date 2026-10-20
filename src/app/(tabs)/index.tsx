@@ -1,5 +1,7 @@
 import * as Device from 'expo-device';
-import { Platform, StyleSheet } from 'react-native';
+import { router } from 'expo-router';
+import { useEffect, useState } from 'react';
+import { ActivityIndicator, Platform, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AnimatedIcon } from '@/components/animated-icon';
@@ -8,6 +10,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { WebBadge } from '@/components/web-badge';
 import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
+import { hasSecret } from '@/lib/vault-secret';
 
 function getDevMenuHint() {
   if (Platform.OS === 'web') {
@@ -29,6 +32,29 @@ function getDevMenuHint() {
 }
 
 export default function HomeScreen() {
+  const [checking, setChecking] = useState(true);
+
+  // App entry: straight to the disguised gate (or first-time setup).
+  useEffect(() => {
+    let cancelled = false;
+    hasSecret().then((exists) => {
+      if (cancelled) return;
+      router.replace(exists ? '/calculator-disguise' : '/setup-secret');
+      setChecking(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (checking) {
+    return (
+      <ThemedView style={styles.loading}>
+        <ActivityIndicator />
+      </ThemedView>
+    );
+  }
+
   return (
     <ThemedView style={styles.container}>
       <SafeAreaView style={styles.safeArea}>
@@ -62,6 +88,11 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
+  loading: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   container: {
     flex: 1,
     justifyContent: 'center',

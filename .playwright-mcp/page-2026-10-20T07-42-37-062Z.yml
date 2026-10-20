@@ -1,0 +1,27 @@
+- generic [ref=e10]:
+  - generic [ref=e11]: "0"
+  - generic [ref=e14]:
+    - generic [ref=e15]:
+      - button "C" [ref=e16] [cursor=pointer]
+      - button "⌫" [ref=e18] [cursor=pointer]
+      - button "±" [ref=e20] [cursor=pointer]
+      - button "÷" [ref=e22] [cursor=pointer]
+    - generic [ref=e24]:
+      - button "7" [ref=e25] [cursor=pointer]
+      - button "8" [ref=e27] [cursor=pointer]
+      - button "9" [ref=e29] [cursor=pointer]
+      - button "×" [ref=e31] [cursor=pointer]
+    - generic [ref=e33]:
+      - button "4" [ref=e34] [cursor=pointer]
+      - button "5" [ref=e36] [cursor=pointer]
+      - button "6" [ref=e38] [cursor=pointer]
+      - button "−" [ref=e40] [cursor=pointer]
+    - generic [ref=e42]:
+      - button "1" [active] [ref=e43] [cursor=pointer]
+      - button "2" [ref=e45] [cursor=pointer]
+      - button "3" [ref=e47] [cursor=pointer]
+      - button "+" [ref=e49] [cursor=pointer]
+    - generic [ref=e51]:
+      - button "0" [ref=e52] [cursor=pointer]
+      - button "." [ref=e54] [cursor=pointer]
+      - button "=" [ref=e56] [cursor=pointer]

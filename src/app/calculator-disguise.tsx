@@ -18,6 +18,13 @@ import {
   unlockWithSecretCode,
 } from '@/lib/vault-secret';
 import { isUnlocked, unlock } from '@/lib/vault-session';
+import {
+  clearPinFailures,
+  getLockoutState,
+  recordPinFailure,
+  remainingMs,
+  type LockoutState,
+} from '@/lib/vault-lockout';
 
 type KeyAction =
   | { t: 'digit'; v: string }
@@ -76,6 +83,12 @@ const MAX_EXPR = 24;
 const MATCH_DEBOUNCE_MS = 300;
 const DIGITS_ONLY = /^\d+$/;
 const OP_TAIL_RE = /[+\-*/]$/;
+
+function formatCountdown(totalSeconds: number): string {
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+}
 
 function displayExpr(expr: string): string {
   return expr.replace(/\*/g, '×').replace(/\//g, '÷');
@@ -151,9 +164,12 @@ function applyKey(state: CalcState, action: KeyAction): CalcState {
 export default function CalculatorDisguiseScreen() {
   const theme = useTheme();
   const [calc, setCalc] = useState<CalcState>({ expr: '', evaluated: false });
-  const seqRef = useRef(0);
+  const [lockRemaining, setLockRemaining] = useState(0);
+  const [notice, setNotice] = useState<string | null>(null);
   const navigatingRef = useRef(false);
   const biometricBusyRef = useRef(false);
+  const verifyingRef = useRef(false);
+  const lockoutRef = useRef<LockoutState | null>(null);
   const exprRef = useRef('');
 
   useEffect(() => {
@@ -161,23 +177,66 @@ export default function CalculatorDisguiseScreen() {
   }, [calc.expr]);
 
   useEffect(() => {
-    const seq = ++seqRef.current;
     if (navigatingRef.current) return;
     if (calc.evaluated) return;
     if (!DIGITS_ONLY.test(calc.expr)) return;
     if (calc.expr.length < MIN_CODE_LENGTH || calc.expr.length > MAX_CODE_LENGTH) return;
 
+    const code = calc.expr;
     const timer = setTimeout(() => {
-      unlockWithSecretCode(calc.expr).then((masterKey) => {
-        if (!masterKey || seq !== seqRef.current || navigatingRef.current) return;
-        navigatingRef.current = true;
-        unlock(masterKey);
-        router.replace('/vault');
+      void (async () => {
+        if (verifyingRef.current || navigatingRef.current) return;
+
+        // lockout gate: during backoff the code is not even verified
+        if (lockoutRef.current === null) lockoutRef.current = await getLockoutState();
+        const remaining = remainingMs(lockoutRef.current, Date.now());
+        console.log(`[unlock] len=${code.length} fails=${lockoutRef.current?.fails ?? 0} remainingMs=${remaining}`);
+        if (remaining > 0) {
+          setLockRemaining(Math.ceil(remaining / 1000));
+          return;
+        }
+
+        verifyingRef.current = true;
+        const t0 = Date.now();
+        try {
+          const masterKey = await unlockWithSecretCode(code);
+          console.log(`[unlock] verify done in ${Date.now() - t0}ms match=${masterKey !== null}`);
+          if (masterKey === null) {
+            // real verification, wrong code — count it
+            lockoutRef.current = await recordPinFailure();
+            const after = remainingMs(lockoutRef.current, Date.now());
+            setLockRemaining(after > 0 ? Math.ceil(after / 1000) : 0);
+            setNotice('Error'); // calculator-style hint, no vault wording
+            return;
+          }
+          // Bail only if the user actually edited the expression while the
+          // check ran — previously ANY keypress swallowed a successful unlock.
+          if (navigatingRef.current || exprRef.current !== code) return;
+          void clearPinFailures();
+          lockoutRef.current = null;
+          navigatingRef.current = true;
+          unlock(masterKey);
+          router.replace('/vault');
+        } finally {
+          verifyingRef.current = false;
+        }
+      })().catch((e) => {
+        console.log(`[unlock] crashed: ${e instanceof Error ? e.message : String(e)}`);
       });
     }, MATCH_DEBOUNCE_MS);
 
     return () => clearTimeout(timer);
   }, [calc]);
+
+  // tick the lockout countdown once per second while it is active
+  const lockedOut = lockRemaining > 0;
+  useEffect(() => {
+    if (!lockedOut) return;
+    const interval = setInterval(() => {
+      setLockRemaining((seconds) => (seconds <= 1 ? 0 : seconds - 1));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [lockedOut]);
 
   // Gate: on mount and every foreground, offer biometric unlock when enabled.
   // Cancelled/failed prompts silently fall through to typing the code.
@@ -218,7 +277,10 @@ export default function CalculatorDisguiseScreen() {
     return () => subscription.remove();
   }, []);
 
-  const onPress = (action: KeyAction) => setCalc((current) => applyKey(current, action));
+  const onPress = (action: KeyAction) => {
+    setNotice(null);
+    setCalc((current) => applyKey(current, action));
+  };
 
   const preview =
     !calc.evaluated && /[+\-*/]/.test(calc.expr) ? evaluateExpression(calc.expr) : null;
@@ -237,7 +299,13 @@ export default function CalculatorDisguiseScreen() {
               {calc.expr === '' ? '0' : displayExpr(calc.expr)}
             </Text>
             <Text style={[styles.preview, { color: theme.textSecondary }]} numberOfLines={1}>
-              {preview !== null && Number.isFinite(preview) ? `= ${formatResult(preview)}` : ''}
+              {lockRemaining > 0
+                ? `Locked · ${formatCountdown(lockRemaining)}`
+                : notice !== null
+                  ? `= ${notice}`
+                  : preview !== null && Number.isFinite(preview)
+                    ? `= ${formatResult(preview)}`
+                    : ''}
             </Text>
           </View>
 

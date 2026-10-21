@@ -1,56 +1,55 @@
-# Welcome to your Expo app 👋
+# HideMe
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+A privacy vault disguised as a calculator, built with [Expo](https://expo.dev) + [Expo Router](https://docs.expo.dev/router/introduction).
+
+Type your secret code into the calculator keypad and the vault opens. Anyone else just sees a working calculator.
+
+## Features
+
+- Calculator disguise gate (real, working calculator)
+- PIN unlock: PBKDF2-SHA256 (600k rounds) → AES-256-GCM wrapped master key in SecureStore
+- Files encrypted with AES-256-CTR + HMAC-SHA256 (per-file keys, encrypt-then-MAC, integrity checked before decrypt)
+- Biometric unlock (Face ID / fingerprint) with key kept in Keychain/Keystore
+- Auto-lock after backgrounding (Immediately / 30s / 1min / 5min, configurable in settings)
+- Screenshot + app-switcher blocking while unlocked (restored for the locked calculator)
+- Failed-PIN lockout: 3 free attempts, then exponential backoff (15s → 15min cap), persisted across restarts
+- Folders, search, photo/video/document import with progress
+- Photo, video and document viewers
+- Change code, lock-now, storage stats, erase-all in settings
 
 ## Get started
 
-1. Install dependencies
-
-   ```bash
-   npm install
-   ```
-
-2. Start the app
-
-   ```bash
-   npx expo start
-   ```
-
-In the output, you'll find options to open the app in a
-
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **src/app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
-
 ```bash
-npm run reset-project
+npm install
+npx expo start
 ```
 
-This command will move the starter code to the **example** directory and create a blank **src/app** directory where you can start developing.
+Native modules (`expo-local-authentication`, `expo-video`, …) require a development build — Expo Go will not run the unlock flow:
 
-### Other setup steps
+```bash
+npx expo run:android
+npx expo run:ios
+# or: eas build --profile development
+```
 
-- To set up ESLint for linting, run `npx expo lint`, or follow our guide on ["Using ESLint and Prettier"](https://docs.expo.dev/guides/using-eslint/)
-- If you'd like to set up unit testing, follow our guide on ["Unit Testing with Jest"](https://docs.expo.dev/develop/unit-testing/)
-- Learn more about the TypeScript setup in this template in our guide on ["Using TypeScript"](https://docs.expo.dev/guides/typescript/)
+## Commands
 
-## Learn more
+```bash
+npx expo start          # dev server
+npx expo lint           # eslint
+npx tsc --noEmit        # typecheck
+npx expo export -p web  # static web export
+node --test src/lib/crypto/envelope.test.ts   # crypto unit tests
+```
 
-To learn more about developing your project with Expo, look at the following resources:
+## Project layout
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
-
-## Join the community
-
-Join our community of developers creating universal apps.
-
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+```
+src/app/            routes (file-based routing)
+  index.tsx         entry → setup or calculator gate
+  calculator-disguise.tsx
+  setup-secret.tsx
+  vault/            vault home, folders, item viewer, settings
+src/lib/            crypto core, secret/session, encrypted store
+src/components/     UI (vault components under components/vault/)
+```

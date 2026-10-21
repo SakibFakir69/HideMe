@@ -85,7 +85,24 @@ export default function SetupSecretScreen() {
   useEffect(() => {
     if (form.phase !== 'working') return;
     let cancelled = false;
-    setupSecretCode(form.entry).then(
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    // Surface a real hang (e.g. emulator Keystore stalling) instead of an
+    // endless "Securing…". Normal phones finish in 1–2s, well under 90s.
+    const raced = Promise.race([
+      setupSecretCode(form.entry),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () =>
+            reject(
+              new Error(
+                'Securing took too long. If you are on an emulator, try a physical device; otherwise retry.',
+              ),
+            ),
+          90_000,
+        );
+      }),
+    ]);
+    raced.then(
       (masterKey) => {
         if (cancelled) return;
         unlock(masterKey);
@@ -103,6 +120,7 @@ export default function SetupSecretScreen() {
     );
     return () => {
       cancelled = true;
+      if (timer) clearTimeout(timer);
     };
   }, [form.phase, form.entry]);
 

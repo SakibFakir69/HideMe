@@ -15,7 +15,11 @@ import {
 const STORAGE_KEY = 'vault.secret.v1';
 const BIOMETRIC_KEY = 'vault.mk.biometric';
 const ALGO = 'pbkdf2-sha256';
-const ITERATIONS = 600_000;
+// 150k: OWASP's 600k figure targets server CPUs; on mobile (esp. emulator/dev
+// JS threads) 600k took minutes. 150k keeps solid stretching at usable UX.
+// Stored records carry their own `c`, so old setups keep their original cost.
+export const PBKDF2_ROUNDS = 150_000;
+const ITERATIONS = PBKDF2_ROUNDS;
 const SALT_BYTES = 16;
 const DK_BYTES = 64; // [0:32] = verify hash, [32:64] = key-encryption key
 const DIGITS_RE = /^\d+$/;
@@ -74,7 +78,10 @@ async function derive(code: string, salt: Uint8Array, iterations: number): Promi
   return pbkdf2Async(sha256, code, salt, {
     c: iterations,
     dkLen: DK_BYTES,
-    asyncTick: 10,
+    // Yield to RN's event loop only every ~100ms of work: smaller ticks made
+    // thousands of setTimeout hops whose Android timer latency dominated
+    // total time (the "minutes to secure a PIN" bug).
+    asyncTick: 100,
   });
 }
 
@@ -159,7 +166,11 @@ export async function setupSecretCode(code: string): Promise<Uint8Array> {
 export async function unlockWithSecretCode(candidate: string): Promise<Uint8Array | null> {
   try {
     const record = await loadRecord();
-    if (!record) return null;
+    if (!record) {
+      console.log('[unlock] no record in storage');
+      return null;
+    }
+    console.log(`[unlock] record len=${record.len} c=${record.c} hasMk=${!!record.mk}`);
     if (candidate.length !== record.len || !DIGITS_RE.test(candidate)) return null;
     const { hash, kek } = splitDerived(await derive(candidate, fromHex(record.salt), record.c));
     if (!constantTimeEqual(hash, fromHex(record.hash))) {

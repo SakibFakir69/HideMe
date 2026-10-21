@@ -75,8 +75,10 @@ export async function encryptFile(opts: EncryptFileOptions): Promise<number> {
   const input = source.open(FileMode.ReadOnly);
   try {
     out.offset = 0;
-    out.writeBytes(prefix);
-    out.writeBytes(new Uint8Array(MAC_BYTES)); // mac placeholder, backfilled after the pass
+    // writeBytes is async — every call must be awaited, or close() in finally
+    // races pending writes and rejects with "file handle is closed".
+    await out.writeBytes(prefix);
+    await out.writeBytes(new Uint8Array(MAC_BYTES)); // mac placeholder, backfilled after the pass
     const ctStart = prefix.length + MAC_BYTES;
 
     input.offset = 0;
@@ -89,7 +91,7 @@ export async function encryptFile(opts: EncryptFileOptions): Promise<number> {
       const ct = ctrCipherAt(built.encKey, fileNonce, plainDone).encrypt(chunk);
       mac.update(ct);
       out.offset = ctStart + written;
-      out.writeBytes(ct);
+      await out.writeBytes(ct);
       written += ct.length;
       plainDone += chunk.length;
       onProgress?.({ processed: plainDone, total });
@@ -98,7 +100,7 @@ export async function encryptFile(opts: EncryptFileOptions): Promise<number> {
     if (extra.length > 0) throw new VaultCryptoError('Source file is longer than expected.');
 
     out.offset = prefix.length;
-    out.writeBytes(mac.digest());
+    await out.writeBytes(mac.digest());
     return plainDone;
   } finally {
     input.close();
@@ -151,7 +153,7 @@ export async function decryptFile(opts: DecryptFileOptions): Promise<DecryptedFi
         const chunk = await input.readBytes(Math.min(CHUNK_BYTES, total - plainDone));
         if (chunk.length === 0) throw new VaultCryptoError('Vault envelope corrupted (truncated).');
         const plain = ctrCipherAt(encKey, fileNonce, plainDone).encrypt(chunk);
-        out.writeBytes(plain);
+        await out.writeBytes(plain);
         plainDone += chunk.length;
         onProgress?.({ processed: total + plainDone, total: total * 2 });
       }

@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { ActionSheetModal } from '@/components/vault/action-sheet-modal';
 import { ChangeCodeModal } from '@/components/vault/change-code-modal';
 import { confirmDestructive } from '@/components/vault/confirm';
 import { formatBytes } from '@/components/vault/format';
@@ -21,9 +22,21 @@ import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { useVaultIndex } from '@/hooks/use-vault-index';
+import {
+  AUTOLOCK_OPTIONS,
+  getAutoLockSeconds,
+  setAutoLockSeconds,
+  type AutoLockSeconds,
+} from '@/lib/vault-autolock';
 import { getMasterKey, lock } from '@/lib/vault-session';
-import { isBiometricAvailable, isBiometricEnabled, setBiometricEnabled } from '@/lib/vault-secret';
+import { isBiometricAvailable, isBiometricEnabled, setBiometricEnabled, PBKDF2_ROUNDS } from '@/lib/vault-secret';
 import { computeStats, eraseAllContents, errorMessage } from '@/lib/vault-store';
+
+function describeAutoLock(seconds: AutoLockSeconds): string {
+  if (seconds === 0) return 'Immediately';
+  if (seconds < 60) return `After ${seconds} seconds`;
+  return `After ${seconds / 60} minute${seconds === 60 ? '' : 's'}`;
+}
 
 export default function VaultSettingsScreen() {
   const theme = useTheme();
@@ -33,15 +46,20 @@ export default function VaultSettingsScreen() {
   const [biometricBusy, setBiometricBusy] = useState(false);
   const [changingCode, setChangingCode] = useState(false);
   const [erasing, setErasing] = useState(false);
+  const [autoLock, setAutoLock] = useState<AutoLockSeconds | null>(null);
+  const [autoLockSheet, setAutoLockSheet] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all([isBiometricAvailable(), isBiometricEnabled()]).then(([available, enabled]) => {
-      if (!cancelled) {
-        setBiometricAvailable(available);
-        setBiometricOn(enabled);
-      }
-    });
+    Promise.all([isBiometricAvailable(), isBiometricEnabled(), getAutoLockSeconds()]).then(
+      ([available, enabled, autoLockSeconds]) => {
+        if (!cancelled) {
+          setBiometricAvailable(available);
+          setBiometricOn(enabled);
+          setAutoLock(autoLockSeconds);
+        }
+      },
+    );
     return () => {
       cancelled = true;
     };
@@ -140,6 +158,12 @@ export default function VaultSettingsScreen() {
               }
             />
             <Row
+              icon="timer-outline"
+              title="Auto-lock"
+              subtitle={autoLock !== null ? describeAutoLock(autoLock) : 'Loading…'}
+              onPress={() => setAutoLockSheet(true)}
+            />
+            <Row
               icon="lock-closed-outline"
               title="Lock now"
               subtitle="Clears the key and encrypted cache"
@@ -186,7 +210,7 @@ export default function VaultSettingsScreen() {
             />
             <Row
               icon="speedometer-outline"
-              title="PBKDF2-SHA256 · 600,000 rounds"
+              title={`PBKDF2-SHA256 · ${PBKDF2_ROUNDS.toLocaleString('en-US')} rounds`}
               subtitle="Derives the key from your code"
             />
           </Section>
@@ -194,6 +218,26 @@ export default function VaultSettingsScreen() {
       </SafeAreaView>
 
       <ChangeCodeModal visible={changingCode} onClose={() => setChangingCode(false)} />
+
+      <ActionSheetModal
+        visible={autoLockSheet}
+        title="Auto-lock"
+        actions={AUTOLOCK_OPTIONS.map((option) => ({
+          label: describeAutoLock(option),
+          icon: (
+            <Ionicons
+              name={autoLock === option ? 'radio-button-on' : 'radio-button-off'}
+              size={18}
+              color={autoLock === option ? '#208AEF' : theme.text}
+            />
+          ),
+          onSelect: async () => {
+            setAutoLock(option);
+            await setAutoLockSeconds(option);
+          },
+        }))}
+        onClose={() => setAutoLockSheet(false)}
+      />
     </ThemedView>
   );
 }

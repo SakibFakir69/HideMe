@@ -35,7 +35,7 @@ export default function FolderScreen() {
   const theme = useTheme();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { index, error, loading, refresh } = useVaultIndex();
-  const { busy: importing, progress, importAssets } = useVaultImport();
+  const { busy: importing, progress, importAssets } = useVaultImport(refresh);
   const [query, setQuery] = useState('');
   const [renaming, setRenaming] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);

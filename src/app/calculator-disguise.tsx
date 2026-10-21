@@ -9,6 +9,7 @@ import { ThemedView } from '@/components/themed-view';
 import { Fonts, MaxContentWidth, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { evaluateExpression, formatResult } from '@/lib/calc-engine';
+import { runPbkdf2Bench } from '@/lib/pbkdf2-bench';
 import {
   MAX_CODE_LENGTH,
   MIN_CODE_LENGTH,
@@ -171,6 +172,14 @@ export default function CalculatorDisguiseScreen() {
   const verifyingRef = useRef(false);
   const lockoutRef = useRef<LockoutState | null>(null);
   const exprRef = useRef('');
+  const benchRanRef = useRef(false);
+
+  // Dev diagnostic: typing 1337 runs the PBKDF2 benchmark (logs only).
+  useEffect(() => {
+    if (calc.expr !== '1337' || benchRanRef.current) return;
+    benchRanRef.current = true;
+    runPbkdf2Bench().catch((e) => console.log(`[bench] crashed: ${e}`));
+  }, [calc.expr]);
 
   useEffect(() => {
     exprRef.current = calc.expr;

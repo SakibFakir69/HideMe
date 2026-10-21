@@ -14,9 +14,10 @@ export function ImportProgressModal({ progress }: ImportProgressModalProps) {
   const visible = progress !== null;
   const percent = Math.round((progress?.fraction ?? 0) * 100);
   const fileLabel =
-    progress && progress.fileCount > 0
+    progress?.phase ??
+    (progress && progress.fileCount > 0
       ? `Encrypting file ${Math.min(progress.fileIndex + 1, progress.fileCount)} of ${progress.fileCount}`
-      : 'Encrypting…';
+      : 'Encrypting…');
 
   return (
     <Modal visible={visible} transparent animationType="fade">

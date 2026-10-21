@@ -64,12 +64,38 @@ export interface ImportProgress {
   fileBytes: number;
   /** 0..1 across the whole batch */
   fraction: number;
+  /** transient label (e.g. "Preparing…") shown instead of the file label */
+  phase?: string;
 }
 
 const rand: Random = (length: number) => Crypto.getRandomBytes(length);
 
 let cachedIndex: VaultIndex | null = null;
 const inflightDecrypts = new Map<string, Promise<File>>();
+
+// Grids mount a decrypt per photo at once — unbounded parallel pure-JS crypto
+// saturates the JS thread (janky UI, frozen spinners). Cap concurrency.
+const MAX_PARALLEL_DECRYPTS = 2;
+let activeDecrypts = 0;
+const decryptWaiters: (() => void)[] = [];
+
+function acquireDecryptSlot(): Promise<void> {
+  if (activeDecrypts < MAX_PARALLEL_DECRYPTS) {
+    activeDecrypts++;
+    return Promise.resolve();
+  }
+  return new Promise((resolve) => {
+    decryptWaiters.push(() => {
+      activeDecrypts++;
+      resolve();
+    });
+  });
+}
+
+function releaseDecryptSlot(): void {
+  activeDecrypts--;
+  decryptWaiters.shift()?.();
+}
 
 function emptyIndex(): VaultIndex {
   return { v: 2, folders: [], items: [] };
@@ -228,6 +254,7 @@ export async function importAssets(opts: ImportOptions): Promise<VaultItem[]> {
   for (let i = 0; i < assets.length; i++) {
     const asset = assets[i];
     const id = Crypto.randomUUID();
+    console.log(`[import] encrypt file ${i + 1}/${assets.length} name=${asset.name} srcExists=${new File(asset.uri).exists} size=${new File(asset.uri).size ?? '?'}`);
     const source = new File(asset.uri);
     const dest = itemFile(id);
     const report = (p: FileCryptoProgress) =>
@@ -240,6 +267,7 @@ export async function importAssets(opts: ImportOptions): Promise<VaultItem[]> {
       });
     let size = 0;
     try {
+      const t0 = Date.now();
       size = await encryptFile({
         source,
         dest,
@@ -248,7 +276,11 @@ export async function importAssets(opts: ImportOptions): Promise<VaultItem[]> {
         rand,
         onProgress: report,
       });
+      const ms = Math.max(1, Date.now() - t0);
+      const mbs = Math.round(size / (1024 * 1024) / (ms / 1000) * 10) / 10;
+      console.log(`[import] encrypted ok ${asset.name} -> ${size} bytes in ${ms}ms (${mbs} MB/s)`);
     } catch (error) {
+      console.log(`[import] encrypt failed ${asset.name}: ${error instanceof Error ? error.message : String(error)}`);
       if (dest.exists) dest.delete();
       const label = asset.name || asset.uri;
       throw new Error(`Could not encrypt "${label}": ${errorMessage(error)}`);
@@ -389,12 +421,17 @@ export function decryptToCache(
   if (existing) return existing;
 
   const task = (async () => {
-    ensureDir(tmpDir());
-    const source = itemFile(item.id);
-    if (!source.exists) throw new Error('Encrypted file is missing from the vault.');
-    const dest = plainFileFor(item);
-    await decryptFile({ source, dest, masterKey, onProgress });
-    return dest;
+    await acquireDecryptSlot();
+    try {
+      ensureDir(tmpDir());
+      const source = itemFile(item.id);
+      if (!source.exists) throw new Error('Encrypted file is missing from the vault.');
+      const dest = plainFileFor(item);
+      await decryptFile({ source, dest, masterKey, onProgress });
+      return dest;
+    } finally {
+      releaseDecryptSlot();
+    }
   })();
 
   inflightDecrypts.set(item.id, task);

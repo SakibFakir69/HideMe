@@ -41,7 +41,7 @@ const GRID_GAP = Spacing.two;
 export default function VaultHomeScreen() {
   const theme = useTheme();
   const { index, error, loading, refresh } = useVaultIndex();
-  const { busy: importing, progress, importAssets } = useVaultImport();
+  const { busy: importing, progress, importAssets } = useVaultImport(refresh);
   const [query, setQuery] = useState('');
   const [prompt, setPrompt] = useState<null | {
     mode: 'new-folder' | 'rename-folder';

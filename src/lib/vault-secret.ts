@@ -166,11 +166,7 @@ export async function setupSecretCode(code: string): Promise<Uint8Array> {
 export async function unlockWithSecretCode(candidate: string): Promise<Uint8Array | null> {
   try {
     const record = await loadRecord();
-    if (!record) {
-      console.log('[unlock] no record in storage');
-      return null;
-    }
-    console.log(`[unlock] record len=${record.len} c=${record.c} hasMk=${!!record.mk}`);
+    if (!record) return null;
     if (candidate.length !== record.len || !DIGITS_RE.test(candidate)) return null;
     const { hash, kek } = splitDerived(await derive(candidate, fromHex(record.salt), record.c));
     if (!constantTimeEqual(hash, fromHex(record.hash))) {

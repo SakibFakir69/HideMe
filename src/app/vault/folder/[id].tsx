@@ -15,9 +15,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { ActionSheetModal } from '@/components/vault/action-sheet-modal';
 import { confirmDestructive } from '@/components/vault/confirm';
 import { ImportProgressModal } from '@/components/vault/import-progress-modal';
+import { ItemTile } from '@/components/vault/item-tile';
+import { MoveItemsSheet } from '@/components/vault/move-items-sheet';
 import { NamePromptModal } from '@/components/vault/name-prompt-modal';
 import { SearchBar } from '@/components/vault/search-bar';
-import { Thumbnail } from '@/components/vault/thumbnail';
+import { SelectionBar } from '@/components/vault/selection-bar';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
@@ -25,8 +27,7 @@ import { useTheme } from '@/hooks/use-theme';
 import { useVaultImport } from '@/hooks/use-vault-import';
 import { useVaultIndex } from '@/hooks/use-vault-index';
 import { getMasterKey } from '@/lib/vault-session';
-import { deleteFolder, renameFolder, searchItems } from '@/lib/vault-store';
-import type { VaultItem } from '@/lib/vault-store';
+import { deleteFolder, moveItemsToBin, renameFolder, restoreItems, searchItems } from '@/lib/vault-store';
 
 const NUM_COLUMNS = 3;
 const GRID_GAP = Spacing.two;
@@ -39,6 +40,19 @@ export default function FolderScreen() {
   const [query, setQuery] = useState('');
   const [renaming, setRenaming] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [selected, setSelected] = useState<Set<string> | null>(null);
+  const [moveOpen, setMoveOpen] = useState(false);
+  const selectMode = selected !== null;
+
+  const toggleSelect = (id: string) =>
+    setSelected((prev) => {
+      if (!prev) return new Set([id]);
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next.size > 0 ? next : null;
+    });
+  const startSelect = (id: string) => setSelected(new Set([id]));
 
   const folder = useMemo(
     () => index?.folders.find((f) => f.id === id) ?? null,
@@ -50,6 +64,40 @@ export default function FolderScreen() {
     const scoped = searchItems(index, query.trim(), id);
     return scoped;
   }, [index, id, query]);
+
+  const selectAll = () => setSelected(new Set(items.map((it) => it.id)));
+
+  const onDeleteSelected = useCallback(async () => {
+    if (!selected || selected.size === 0) return;
+    const ids = [...selected];
+    const n = ids.length;
+    const ok = await confirmDestructive(
+      'Move to bin',
+      `${n} file${n === 1 ? '' : 's'} will be kept in Recently deleted for 30 days, then deleted permanently.`,
+    );
+    if (!ok) return;
+    try {
+      await moveItemsToBin(getMasterKey(), ids);
+      setSelected(null);
+      Alert.alert(
+        'Moved to bin',
+        `${n} file${n === 1 ? '' : 's'} will be permanently deleted in 30 days.`,
+        [
+          {
+            text: 'Undo',
+            onPress: () => {
+              restoreItems(getMasterKey(), ids).catch((err) =>
+                Alert.alert('Could not restore', err instanceof Error ? err.message : String(err)),
+              );
+            },
+          },
+          { text: 'OK', style: 'cancel' },
+        ],
+      );
+    } catch (err) {
+      Alert.alert('Could not delete', err instanceof Error ? err.message : String(err));
+    }
+  }, [selected]);
 
   const columns = useMemo(() => {
     const width = Dimensions.get('window').width;
@@ -142,17 +190,53 @@ export default function FolderScreen() {
           keyExtractor={(item) => item.id}
           numColumns={NUM_COLUMNS}
           columnWrapperStyle={items.length >= 1 ? styles.gridRow : undefined}
-          contentContainerStyle={styles.listContent}
+          contentContainerStyle={[
+            styles.listContent,
+            selectMode && styles.listContentSelecting,
+          ]}
+          style={styles.listFlex}
           ListHeaderComponent={renderHeader}
           ListEmptyComponent={renderEmpty}
-          renderItem={({ item }) => <ItemTile item={item} size={columns} />}
+          renderItem={({ item }) => (
+            <ItemTile
+              item={item}
+              size={columns}
+              selectMode={selectMode}
+              selected={selected?.has(item.id) ?? false}
+              onPress={() => {
+                if (selectMode) toggleSelect(item.id);
+                else router.push({ pathname: '/vault/item/[id]', params: { id: item.id } });
+              }}
+              onLongPress={() => startSelect(item.id)}
+            />
+          )}
           initialNumToRender={9}
           windowSize={7}
           removeClippedSubviews
         />
+        {selectMode && (
+          <SelectionBar
+            count={selected.size}
+            total={items.length}
+            onCancel={() => setSelected(null)}
+            onSelectAll={selectAll}
+            onMove={() => setMoveOpen(true)}
+            onDelete={() => void onDeleteSelected()}
+          />
+        )}
       </SafeAreaView>
 
       <ImportProgressModal progress={progress} />
+
+      <MoveItemsSheet
+        visible={moveOpen}
+        ids={selected ? [...selected] : []}
+        onClose={() => setMoveOpen(false)}
+        onChanged={() => {
+          setMoveOpen(false);
+          setSelected(null);
+        }}
+      />
 
       <ActionSheetModal
         visible={sheetOpen}
@@ -229,19 +313,6 @@ function Header({
   );
 }
 
-function ItemTile({ item, size }: { item: VaultItem; size: number }) {
-  return (
-    <Pressable
-      onPress={() => router.push({ pathname: '/vault/item/[id]', params: { id: item.id } })}
-      style={({ pressed }) => [styles.tile, pressed && styles.pressed]}>
-      <Thumbnail item={item} size={size} />
-      <ThemedText type="code" numberOfLines={1} style={styles.tileName} themeColor="textSecondary">
-        {item.name}
-      </ThemedText>
-    </Pressable>
-  );
-}
-
 function ActionButton({
   icon,
   label,
@@ -285,6 +356,12 @@ const styles = StyleSheet.create({
     paddingBottom: Spacing.six,
     flexGrow: 1,
   },
+  listContentSelecting: {
+    paddingBottom: 96,
+  },
+  listFlex: {
+    flex: 1,
+  },
   headerBlock: {
     gap: Spacing.three,
     paddingTop: Spacing.two,
@@ -324,13 +401,6 @@ const styles = StyleSheet.create({
   gridRow: {
     gap: GRID_GAP,
     marginBottom: GRID_GAP,
-  },
-  tile: {
-    gap: Spacing.one,
-  },
-  tileName: {
-    fontSize: 10,
-    lineHeight: 14,
   },
   emptyBox: {
     flex: 1,

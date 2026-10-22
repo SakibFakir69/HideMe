@@ -9,7 +9,6 @@ import { ThemedView } from '@/components/themed-view';
 import { Fonts, MaxContentWidth, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { evaluateExpression, formatResult } from '@/lib/calc-engine';
-import { runPbkdf2Bench } from '@/lib/pbkdf2-bench';
 import {
   MAX_CODE_LENGTH,
   MIN_CODE_LENGTH,
@@ -172,14 +171,6 @@ export default function CalculatorDisguiseScreen() {
   const verifyingRef = useRef(false);
   const lockoutRef = useRef<LockoutState | null>(null);
   const exprRef = useRef('');
-  const benchRanRef = useRef(false);
-
-  // Dev diagnostic: typing 1337 runs the PBKDF2 benchmark (logs only).
-  useEffect(() => {
-    if (calc.expr !== '1337' || benchRanRef.current) return;
-    benchRanRef.current = true;
-    runPbkdf2Bench().catch((e) => console.log(`[bench] crashed: ${e}`));
-  }, [calc.expr]);
 
   useEffect(() => {
     exprRef.current = calc.expr;
@@ -199,17 +190,14 @@ export default function CalculatorDisguiseScreen() {
         // lockout gate: during backoff the code is not even verified
         if (lockoutRef.current === null) lockoutRef.current = await getLockoutState();
         const remaining = remainingMs(lockoutRef.current, Date.now());
-        console.log(`[unlock] len=${code.length} fails=${lockoutRef.current?.fails ?? 0} remainingMs=${remaining}`);
         if (remaining > 0) {
           setLockRemaining(Math.ceil(remaining / 1000));
           return;
         }
 
         verifyingRef.current = true;
-        const t0 = Date.now();
         try {
           const masterKey = await unlockWithSecretCode(code);
-          console.log(`[unlock] verify done in ${Date.now() - t0}ms match=${masterKey !== null}`);
           if (masterKey === null) {
             // real verification, wrong code — count it
             lockoutRef.current = await recordPinFailure();
@@ -229,8 +217,8 @@ export default function CalculatorDisguiseScreen() {
         } finally {
           verifyingRef.current = false;
         }
-      })().catch((e) => {
-        console.log(`[unlock] crashed: ${e instanceof Error ? e.message : String(e)}`);
+      })().catch(() => {
+        setNotice('Error');
       });
     }, MATCH_DEBOUNCE_MS);
 

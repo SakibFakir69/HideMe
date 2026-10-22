@@ -1,27 +1,22 @@
 {
   "expo": {
-    "name": "hideme",
+    "name": "Calculator",
     "slug": "hideme",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "hideme",
     "userInterfaceStyle": "automatic",
-    "ios": {
-      "icon": "./assets/expo.icon"
-    },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#F2F2F4",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
-        "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
       "permissions": [
         "android.permission.USE_BIOMETRIC",
-        "android.permission.USE_FINGERPRINT",
-        "android.permission.RECORD_AUDIO"
+        "android.permission.USE_FINGERPRINT"
       ],
       "package": "com.sakibfakir.hideme"
     },
@@ -34,7 +29,7 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#208AEF",
+          "backgroundColor": "#F2F2F4",
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 76
         }
@@ -50,7 +45,8 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Allow $(PRODUCT_NAME) to select media to encrypt."
+          "photosPermission": "Allow $(PRODUCT_NAME) to select media to encrypt.",
+          "microphonePermission": false
         }
       ]
     ],

@@ -1,6 +1,7 @@
 import * as Crypto from 'expo-crypto';
 import { Directory, File, Paths } from 'expo-file-system';
 
+import { binEntries, expiredIds, isDeleted } from './vault-bin-core';
 import {
   decryptBytes,
   encryptBytes,
@@ -35,6 +36,8 @@ export interface VaultItem {
   size: number;
   folderId: string | null;
   createdAt: number;
+  /** set while the item is in Recently-deleted; removed on restore */
+  deletedAt?: number;
   width?: number;
   height?: number;
   durationMs?: number;
@@ -180,6 +183,23 @@ async function saveIndex(masterKey: Uint8Array): Promise<void> {
   const bytes = encryptBytes(utf8(JSON.stringify(cachedIndex)), masterKey, 'vault-index', rand);
   const f = ensureIndexFile();
   await f.write(bytes);
+  notifyIndexListeners();
+}
+
+/* Change notifications: every mutation persists through saveIndex, so all
+ * mounted screens (grid, folder, bin, viewer) refresh via their hooks. */
+type IndexListener = () => void;
+const indexListeners = new Set<IndexListener>();
+
+export function subscribeIndex(listener: IndexListener): () => void {
+  indexListeners.add(listener);
+  return () => {
+    indexListeners.delete(listener);
+  };
+}
+
+function notifyIndexListeners(): void {
+  for (const listener of [...indexListeners]) listener();
 }
 
 export function peekIndex(): VaultIndex | null {
@@ -254,7 +274,6 @@ export async function importAssets(opts: ImportOptions): Promise<VaultItem[]> {
   for (let i = 0; i < assets.length; i++) {
     const asset = assets[i];
     const id = Crypto.randomUUID();
-    console.log(`[import] encrypt file ${i + 1}/${assets.length} name=${asset.name} srcExists=${new File(asset.uri).exists} size=${new File(asset.uri).size ?? '?'}`);
     const source = new File(asset.uri);
     const dest = itemFile(id);
     const report = (p: FileCryptoProgress) =>
@@ -267,7 +286,6 @@ export async function importAssets(opts: ImportOptions): Promise<VaultItem[]> {
       });
     let size = 0;
     try {
-      const t0 = Date.now();
       size = await encryptFile({
         source,
         dest,
@@ -276,11 +294,7 @@ export async function importAssets(opts: ImportOptions): Promise<VaultItem[]> {
         rand,
         onProgress: report,
       });
-      const ms = Math.max(1, Date.now() - t0);
-      const mbs = Math.round(size / (1024 * 1024) / (ms / 1000) * 10) / 10;
-      console.log(`[import] encrypted ok ${asset.name} -> ${size} bytes in ${ms}ms (${mbs} MB/s)`);
     } catch (error) {
-      console.log(`[import] encrypt failed ${asset.name}: ${error instanceof Error ? error.message : String(error)}`);
       if (dest.exists) dest.delete();
       const label = asset.name || asset.uri;
       throw new Error(`Could not encrypt "${label}": ${errorMessage(error)}`);
@@ -312,14 +326,90 @@ export async function importAssets(opts: ImportOptions): Promise<VaultItem[]> {
   return added;
 }
 
-export async function deleteItem(masterKey: Uint8Array, itemId: string): Promise<void> {
+/** Soft delete: move to Recently-deleted (bin); the encrypted file is kept until purge. */
+export async function moveItemsToBin(masterKey: Uint8Array, ids: string[]): Promise<void> {
+  const index = await loadIndex(masterKey);
+  const set = new Set(ids);
+  const at = Date.now();
+  let matched = 0;
+  let moved = 0;
+  for (const item of index.items) {
+    if (!set.has(item.id)) continue;
+    matched++;
+    if (isDeleted(item)) continue;
+    item.deletedAt = at;
+    moved++;
+  }
+  if (matched === 0) throw new Error('Item not found.');
+  if (moved === 0) return;
+  await saveIndex(masterKey);
+}
+
+export async function moveItemToBin(masterKey: Uint8Array, itemId: string): Promise<void> {
+  return moveItemsToBin(masterKey, [itemId]);
+}
+
+/** Undo move-to-bin: clears deletedAt so items return to the vault. */
+export async function restoreItems(masterKey: Uint8Array, ids: string[]): Promise<void> {
+  const index = await loadIndex(masterKey);
+  const set = new Set(ids);
+  let matched = 0;
+  let restored = 0;
+  for (const item of index.items) {
+    if (!set.has(item.id)) continue;
+    matched++;
+    if (!isDeleted(item)) continue;
+    delete item.deletedAt;
+    restored++;
+  }
+  if (matched === 0) throw new Error('Item not found.');
+  if (restored === 0) return;
+  await saveIndex(masterKey);
+}
+
+export async function restoreItem(masterKey: Uint8Array, itemId: string): Promise<void> {
+  return restoreItems(masterKey, [itemId]);
+}
+
+/** Permanently delete a single bin entry (file + index row). */
+export async function purgeItem(masterKey: Uint8Array, itemId: string): Promise<void> {
   const index = await loadIndex(masterKey);
   const at = index.items.findIndex((it) => it.id === itemId);
   if (at < 0) throw new Error('Item not found.');
-  const file = itemFile(itemId);
-  if (file.exists) file.delete();
+  deleteItemFile(itemId);
   index.items.splice(at, 1);
   await saveIndex(masterKey);
+}
+
+/** Permanently delete everything in the bin. */
+export async function emptyBin(masterKey: Uint8Array): Promise<void> {
+  const index = await loadIndex(masterKey);
+  if (!index.items.some(isDeleted)) return;
+  for (const item of index.items) if (isDeleted(item)) deleteItemFile(item.id);
+  index.items = index.items.filter((it) => !isDeleted(it));
+  await saveIndex(masterKey);
+}
+
+/** 30-day retention sweep: hard-deletes bin entries past the limit. Returns purged ids. */
+export async function purgeExpired(masterKey: Uint8Array, now = Date.now()): Promise<string[]> {
+  const index = await loadIndex(masterKey);
+  const ids = expiredIds(index.items, now);
+  if (ids.length === 0) return [];
+  const purged = new Set(ids);
+  for (const id of ids) deleteItemFile(id);
+  index.items = index.items.filter((it) => !purged.has(it.id));
+  await saveIndex(masterKey);
+  return ids;
+}
+
+/** Bin items (deleted items), newest deletion first. */
+export function binItems(index: VaultIndex): VaultItem[] {
+  return binEntries(index.items);
+}
+
+function deleteItemFile(itemId: string): void {
+  const file = itemFile(itemId);
+  if (file.exists) file.delete();
   clearInflight(itemId);
 }
 
@@ -333,19 +423,32 @@ export async function renameItem(masterKey: Uint8Array, itemId: string, name: st
   await saveIndex(masterKey);
 }
 
-export async function moveItemToFolder(
+export async function moveItemsToFolder(
   masterKey: Uint8Array,
-  itemId: string,
+  ids: string[],
   folderId: string | null,
 ): Promise<void> {
   const index = await loadIndex(masterKey);
   if (folderId && !index.folders.some((f) => f.id === folderId)) {
     throw new Error('Folder not found.');
   }
-  const item = index.items.find((it) => it.id === itemId);
-  if (!item) throw new Error('Item not found.');
-  item.folderId = folderId;
+  const set = new Set(ids);
+  let matched = 0;
+  for (const item of index.items) {
+    if (!set.has(item.id)) continue;
+    matched++;
+    item.folderId = folderId;
+  }
+  if (matched === 0) throw new Error('Item not found.');
   await saveIndex(masterKey);
+}
+
+export async function moveItemToFolder(
+  masterKey: Uint8Array,
+  itemId: string,
+  folderId: string | null,
+): Promise<void> {
+  return moveItemsToFolder(masterKey, [itemId], folderId);
 }
 
 /* ------------------------------------------------------------------ */
@@ -361,7 +464,9 @@ export interface SearchResult {
 export function searchItems(index: VaultIndex, rawQuery: string, folderId?: string | null): VaultItem[] {
   const scope = folderId === undefined ? null : folderId;
   const q = rawQuery.trim().toLowerCase();
-  const scopeItems = scope ? index.items.filter((it) => it.folderId === scope) : index.items;
+  const scopeItems = index.items.filter(
+    (it) => !isDeleted(it) && (scope === null || it.folderId === scope),
+  );
   if (!q) return scopeItems;
   return scopeItems.filter((item) => {
     if (item.name.toLowerCase().includes(q)) return true;
@@ -378,8 +483,13 @@ export interface StorageStats {
 
 export function computeStats(index: VaultIndex): StorageStats {
   let totalBytes = 0;
-  for (const item of index.items) totalBytes += item.size;
-  return { itemCount: index.items.length, folderCount: index.folders.length, totalBytes };
+  let itemCount = 0;
+  for (const item of index.items) {
+    if (isDeleted(item)) continue;
+    itemCount++;
+    totalBytes += item.size;
+  }
+  return { itemCount, folderCount: index.folders.length, totalBytes };
 }
 
 export async function eraseAllContents(masterKey: Uint8Array): Promise<void> {

@@ -17,9 +17,11 @@ import { formatBytes } from '@/components/vault/format';
 import { ActionSheetModal } from '@/components/vault/action-sheet-modal';
 import { confirmDestructive } from '@/components/vault/confirm';
 import { ImportProgressModal } from '@/components/vault/import-progress-modal';
+import { ItemTile } from '@/components/vault/item-tile';
+import { MoveItemsSheet } from '@/components/vault/move-items-sheet';
 import { NamePromptModal } from '@/components/vault/name-prompt-modal';
 import { SearchBar } from '@/components/vault/search-bar';
-import { Thumbnail } from '@/components/vault/thumbnail';
+import { SelectionBar } from '@/components/vault/selection-bar';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
@@ -30,10 +32,12 @@ import { getMasterKey, lock } from '@/lib/vault-session';
 import {
   createFolder,
   deleteFolder,
+  moveItemsToBin,
   renameFolder,
+  restoreItems,
   searchItems,
 } from '@/lib/vault-store';
-import type { VaultFolder, VaultItem } from '@/lib/vault-store';
+import type { VaultFolder } from '@/lib/vault-store';
 
 const NUM_COLUMNS = 3;
 const GRID_GAP = Spacing.two;
@@ -48,6 +52,19 @@ export default function VaultHomeScreen() {
     folder?: VaultFolder;
   }>(null);
   const [folderSheet, setFolderSheet] = useState<VaultFolder | null>(null);
+  const [selected, setSelected] = useState<Set<string> | null>(null);
+  const [moveOpen, setMoveOpen] = useState(false);
+  const selectMode = selected !== null;
+
+  const toggleSelect = (id: string) =>
+    setSelected((prev) => {
+      if (!prev) return new Set([id]);
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next.size > 0 ? next : null;
+    });
+  const startSelect = (id: string) => setSelected(new Set([id]));
 
   const folders = useMemo(() => {
     if (!index) return [];
@@ -60,6 +77,40 @@ export default function VaultHomeScreen() {
     if (!index) return [];
     return searchItems(index, query.trim());
   }, [index, query]);
+
+  const selectAll = () => setSelected(new Set(items.map((it) => it.id)));
+
+  const onDeleteSelected = useCallback(async () => {
+    if (!selected || selected.size === 0) return;
+    const ids = [...selected];
+    const n = ids.length;
+    const ok = await confirmDestructive(
+      'Move to bin',
+      `${n} file${n === 1 ? '' : 's'} will be kept in Recently deleted for 30 days, then deleted permanently.`,
+    );
+    if (!ok) return;
+    try {
+      await moveItemsToBin(getMasterKey(), ids);
+      setSelected(null);
+      Alert.alert(
+        'Moved to bin',
+        `${n} file${n === 1 ? '' : 's'} will be permanently deleted in 30 days.`,
+        [
+          {
+            text: 'Undo',
+            onPress: () => {
+              restoreItems(getMasterKey(), ids).catch((err) =>
+                Alert.alert('Could not restore', err instanceof Error ? err.message : String(err)),
+              );
+            },
+          },
+          { text: 'OK', style: 'cancel' },
+        ],
+      );
+    } catch (err) {
+      Alert.alert('Could not delete', err instanceof Error ? err.message : String(err));
+    }
+  }, [selected]);
 
   const columns = useMemo(() => {
     const width = Dimensions.get('window').width;
@@ -95,6 +146,11 @@ export default function VaultHomeScreen() {
           Vault
         </ThemedText>
         <View style={styles.toolbarActions}>
+          <IconButton
+            icon="trash-outline"
+            label="Recently deleted"
+            onPress={() => router.push('/vault/bin')}
+          />
           <IconButton icon="lock-closed-outline" label="Lock vault" onPress={onLock} />
           <IconButton
             icon="settings-outline"
@@ -166,9 +222,9 @@ export default function VaultHomeScreen() {
         </View>
       )}
 
-      {!query && index && index.items.length > 0 && (
+      {!query && index && items.length > 0 && (
         <ThemedText type="smallBold" themeColor="textSecondary" style={styles.sectionLabel}>
-          ALL ITEMS · {index.items.length} · {formatBytes(items.reduce((n, it) => n + it.size, 0))}
+          ALL ITEMS · {items.length} · {formatBytes(items.reduce((n, it) => n + it.size, 0))}
         </ThemedText>
       )}
       {query && (
@@ -220,17 +276,53 @@ export default function VaultHomeScreen() {
           keyExtractor={(item) => item.id}
           numColumns={NUM_COLUMNS}
           columnWrapperStyle={items.length >= 1 ? styles.gridRow : undefined}
-          contentContainerStyle={styles.listContent}
+          contentContainerStyle={[
+            styles.listContent,
+            selectMode && styles.listContentSelecting,
+          ]}
+          style={styles.listFlex}
           ListHeaderComponent={renderHeader}
           ListEmptyComponent={renderEmpty}
-          renderItem={({ item }) => <ItemTile item={item} size={columns} />}
+          renderItem={({ item }) => (
+            <ItemTile
+              item={item}
+              size={columns}
+              selectMode={selectMode}
+              selected={selected?.has(item.id) ?? false}
+              onPress={() => {
+                if (selectMode) toggleSelect(item.id);
+                else router.push({ pathname: '/vault/item/[id]', params: { id: item.id } });
+              }}
+              onLongPress={() => startSelect(item.id)}
+            />
+          )}
           initialNumToRender={9}
           windowSize={7}
           removeClippedSubviews
         />
+        {selectMode && (
+          <SelectionBar
+            count={selected.size}
+            total={items.length}
+            onCancel={() => setSelected(null)}
+            onSelectAll={selectAll}
+            onMove={() => setMoveOpen(true)}
+            onDelete={() => void onDeleteSelected()}
+          />
+        )}
       </SafeAreaView>
 
       <ImportProgressModal progress={progress} />
+
+      <MoveItemsSheet
+        visible={moveOpen}
+        ids={selected ? [...selected] : []}
+        onClose={() => setMoveOpen(false)}
+        onChanged={() => {
+          setMoveOpen(false);
+          setSelected(null);
+        }}
+      />
 
       <NamePromptModal
         visible={prompt !== null}
@@ -273,19 +365,6 @@ export default function VaultHomeScreen() {
         onClose={() => setFolderSheet(null)}
       />
     </ThemedView>
-  );
-}
-
-function ItemTile({ item, size }: { item: VaultItem; size: number }) {
-  return (
-    <Pressable
-      onPress={() => router.push({ pathname: '/vault/item/[id]', params: { id: item.id } })}
-      style={({ pressed }) => [styles.tile, pressed && styles.pressed]}>
-      <Thumbnail item={item} size={size} />
-      <ThemedText type="code" numberOfLines={1} style={styles.tileName} themeColor="textSecondary">
-        {item.name}
-      </ThemedText>
-    </Pressable>
   );
 }
 
@@ -357,6 +436,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.three,
     paddingBottom: Spacing.six,
     flexGrow: 1,
+  },
+  listContentSelecting: {
+    paddingBottom: 96,
+  },
+  listFlex: {
+    flex: 1,
   },
   headerBlock: {
     gap: Spacing.three,
@@ -430,13 +515,6 @@ const styles = StyleSheet.create({
   gridRow: {
     gap: GRID_GAP,
     marginBottom: GRID_GAP,
-  },
-  tile: {
-    gap: Spacing.one,
-  },
-  tileName: {
-    fontSize: 10,
-    lineHeight: 14,
   },
   emptyBox: {
     flex: 1,

@@ -23,7 +23,7 @@ import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { useVaultIndex } from '@/hooks/use-vault-index';
 import { getMasterKey } from '@/lib/vault-session';
-import { deleteItem, decryptToCache, errorMessage, moveItemToFolder, renameItem } from '@/lib/vault-store';
+import { decryptToCache, errorMessage, moveItemToBin, moveItemToFolder, renameItem, restoreItem } from '@/lib/vault-store';
 import type { VaultItem } from '@/lib/vault-store';
 
 type DecryptState =
@@ -80,11 +80,26 @@ export default function ItemScreen() {
 
   const onDelete = useCallback(async () => {
     if (!item) return;
-    const ok = await confirmDestructive('Delete permanently', `Delete "${item.name}"? This cannot be undone.`);
+    const ok = await confirmDestructive(
+      'Move to bin',
+      `"${item.name}" will be kept in Recently deleted for 30 days, then deleted permanently.`,
+    );
     if (!ok) return;
+    const { id: deletedId, name: deletedName } = item;
     try {
-      await deleteItem(getMasterKey(), item.id);
+      await moveItemToBin(getMasterKey(), deletedId);
       router.back();
+      Alert.alert('Moved to bin', `"${deletedName}" will be permanently deleted in 30 days.`, [
+        {
+          text: 'Undo',
+          onPress: () => {
+            restoreItem(getMasterKey(), deletedId).catch((error) =>
+              Alert.alert('Could not restore', errorMessage(error)),
+            );
+          },
+        },
+        { text: 'OK', style: 'cancel' },
+      ]);
     } catch (error) {
       Alert.alert('Could not delete', errorMessage(error));
     }
@@ -183,7 +198,7 @@ export default function ItemScreen() {
             onSelect: () => setMoving(true),
           },
           {
-            label: 'Delete',
+            label: 'Move to bin',
             destructive: true,
             icon: <Ionicons name="trash-outline" size={18} color="#D9342B" />,
             onSelect: () => void onDelete(),

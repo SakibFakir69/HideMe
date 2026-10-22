@@ -17,20 +17,16 @@ export function useVaultImport(onImported?: () => Promise<void>) {
       if (busy) return;
       setBusy(true);
       try {
-        console.log(`[import] pick start kind=${kind} folder=${folderId ?? 'root'}`);
         const assets = await pickAssets(kind);
         if (assets === null) {
-          console.log('[import] picker cancelled');
           setBusy(false);
           return; // cancelled
         }
         if (assets.length === 0) {
-          console.log('[import] picker returned 0 assets');
           Alert.alert('Nothing selected', 'No files were picked — try again and select at least one item.');
           setBusy(false);
           return;
         }
-        console.log(`[import] picked ${assets.length} asset(s): ${assets.map((a) => `${a.name}(${a.mime}) ${a.uri.slice(0, 60)}`).join(' | ')}`);
         // Show the modal immediately — before the first chunk report — so the
         // gap (index load, dirs, header build) never looks frozen.
         setProgress({
@@ -47,10 +43,8 @@ export function useVaultImport(onImported?: () => Promise<void>) {
           assets,
           onProgress: setProgress,
         });
-        console.log('[import] completed ok');
         await onImported?.();
       } catch (error) {
-        console.log(`[import] FAILED: ${error instanceof Error ? `${error.message}\n${error.stack ?? ''}` : String(error)}`);
         Alert.alert('Import failed', errorMessage(error));
       } finally {
         setProgress(null);
@@ -69,10 +63,9 @@ async function pickAssets(kind: ImportKind): Promise<PickedAsset[] | null> {
     // Android ≤12 needs the runtime grant; 13+ uses the system photo picker
     // (returns granted automatically). iOS always needs the prompt.
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    console.log(`[import] media permission granted=${permission.granted} canAskAgain=${permission.canAskAgain} status=${permission.status}`);
     if (!permission.granted) {
       throw new Error(
-        'Photo library access is required to import media. Enable it in system Settings → Apps → HideMe → Permissions.',
+        'Photo library access is required to import media. Enable it in system Settings → Apps → Calculator → Permissions.',
       );
     }
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -80,7 +73,6 @@ async function pickAssets(kind: ImportKind): Promise<PickedAsset[] | null> {
       allowsMultipleSelection: true,
       orderedSelection: true,
     });
-    console.log(`[import] image picker canceled=${result.canceled} assets=${result.canceled ? 0 : result.assets.length}`);
     if (result.canceled) return null;
     return result.assets.map((asset, i) => {
       const isVideo = asset.type === 'video';
@@ -102,7 +94,6 @@ async function pickAssets(kind: ImportKind): Promise<PickedAsset[] | null> {
     multiple: true,
     type: '*/*',
   });
-  console.log(`[import] doc picker canceled=${result.canceled} assets=${result.canceled ? 0 : result.assets.length}`);
   if (result.canceled) return null;
   return result.assets.map((asset, i) => ({
     uri: asset.uri,

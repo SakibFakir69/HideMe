@@ -1,4 +1,4 @@
-# HideMe
+# Calculator (HideMe)
 
 A privacy vault disguised as a calculator, built with [Expo](https://expo.dev) + [Expo Router](https://docs.expo.dev/router/introduction).
 

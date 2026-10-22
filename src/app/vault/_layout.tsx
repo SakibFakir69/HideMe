@@ -13,6 +13,7 @@ export default function VaultLayout() {
         <Stack.Screen name="index" />
         <Stack.Screen name="folder/[id]" />
         <Stack.Screen name="item/[id]" />
+        <Stack.Screen name="bin" />
         <Stack.Screen name="settings" />
       </Stack>
     </>

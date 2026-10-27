@@ -75,6 +75,7 @@ const rand: Random = (length: number) => Crypto.getRandomBytes(length);
 
 let cachedIndex: VaultIndex | null = null;
 const inflightDecrypts = new Map<string, Promise<File>>();
+const inflightThumbs = new Map<string, Promise<File>>();
 
 // Grids mount a decrypt per photo at once — unbounded parallel pure-JS crypto
 // saturates the JS thread (janky UI, frozen spinners). Cap concurrency.
@@ -314,6 +315,15 @@ export async function importAssets(opts: ImportOptions): Promise<VaultItem[]> {
     };
     index.items.push(item);
     added.push(item);
+    if (item.kind === 'photo') {
+      // Best-effort: a missing thumb only means the grid falls back to the
+      // slower full-decrypt path once (and builds the thumb then).
+      try {
+        await buildThumbForImport(masterKey, id, asset.uri);
+      } catch {
+        // ignore — import itself already succeeded
+      }
+    }
     onProgress?.({
       fileIndex: i + 1,
       fileCount: assets.length,
@@ -410,6 +420,11 @@ export function binItems(index: VaultIndex): VaultItem[] {
 function deleteItemFile(itemId: string): void {
   const file = itemFile(itemId);
   if (file.exists) file.delete();
+  const thumb = thumbCipherFile(itemId);
+  if (thumb.exists) thumb.delete();
+  const thumbPlain = thumbPlainFile(itemId);
+  if (thumbPlain.exists) thumbPlain.delete();
+  inflightThumbs.delete(itemId);
   clearInflight(itemId);
 }
 
@@ -555,8 +570,114 @@ function clearInflight(itemId: string): void {
 
 export function purgeTempPlaintext(): void {
   inflightDecrypts.clear();
+  inflightThumbs.clear();
   const tmp = tmpDir();
   if (tmp.exists) tmp.delete();
+}
+
+/* ------------------------------------------------------------------ */
+/* encrypted thumbnails (grid)                                         */
+/* ------------------------------------------------------------------ */
+
+const THUMB_MAX_DIM = 256;
+const THUMB_COMPRESS = 0.7;
+
+/** Encrypted downscaled JPEG next to the item blob: <id>.thumb */
+export function thumbCipherFile(itemId: string): File {
+  return new File(filesDir(), `${itemId}.thumb`);
+}
+
+/** Decrypted thumb in the session cache (purged on lock). */
+export function thumbPlainFile(itemId: string): File {
+  return new File(tmpDir(), `${itemId}.thumb.jpg`);
+}
+
+async function writeBytesToNewFile(file: File, bytes: Uint8Array): Promise<void> {
+  if (file.exists) file.delete();
+  file.create();
+  await file.write(bytes);
+}
+
+/** Downscale `sourceUri` to a small JPEG and encrypt it as the item's thumb. */
+async function buildThumbFromUri(
+  masterKey: Uint8Array,
+  itemId: string,
+  sourceUri: string,
+): Promise<void> {
+  const { ImageManipulator, SaveFormat } = await import('expo-image-manipulator');
+  const rendered = await ImageManipulator.manipulate(sourceUri)
+    .resize({ width: THUMB_MAX_DIM })
+    .renderAsync();
+  const result = await rendered.saveAsync({ compress: THUMB_COMPRESS, format: SaveFormat.JPEG });
+  try {
+    const plain = new File(result.uri);
+    const bytes = await plain.bytes();
+    const envelope = encryptBytes(bytes, masterKey, `${itemId}.thumb`, rand);
+    ensureDir(filesDir());
+    await writeBytesToNewFile(thumbCipherFile(itemId), envelope);
+  } finally {
+    try {
+      new File(result.uri).delete();
+    } catch {
+      // temp cleanup is best-effort
+    }
+  }
+}
+
+/** Import-time thumb generation — best-effort, never fails the import. */
+async function buildThumbForImport(
+  masterKey: Uint8Array,
+  itemId: string,
+  sourceUri: string,
+): Promise<void> {
+  await buildThumbFromUri(masterKey, itemId, sourceUri);
+}
+
+/**
+ * Grid thumbnail for a photo. Resolution order:
+ *  1. decrypted thumb already cached (instant)
+ *  2. encrypted thumb exists → decrypt the small blob (milliseconds)
+ *  3. legacy item without a thumb → full decrypt once, downscale, encrypt
+ *     the thumb for next time (self-backfill); on any thumb failure falls
+ *     back to the full plaintext so the grid still renders.
+ * Concurrent calls for the same item share one task. Never holds a decrypt
+ * slot while waiting on `decryptToCache` (that would deadlock the cap).
+ */
+export function loadThumb(masterKey: Uint8Array, item: VaultItem): Promise<File> {
+  const existing = inflightThumbs.get(item.id);
+  if (existing) return existing;
+
+  const task = (async () => {
+    ensureDir(tmpDir());
+    const plain = thumbPlainFile(item.id);
+    if (plain.exists) return plain;
+
+    const cipher = thumbCipherFile(item.id);
+    if (cipher.exists) {
+      await acquireDecryptSlot();
+      try {
+        const envelope = await cipher.bytes();
+        const opened = decryptBytes(envelope, masterKey);
+        await writeBytesToNewFile(plain, opened.plaintext);
+        return plain;
+      } finally {
+        releaseDecryptSlot();
+      }
+    }
+
+    // Legacy backfill: full decrypt (self-capped) → downscale → encrypt.
+    const full = await decryptToCache(masterKey, item);
+    try {
+      await buildThumbFromUri(masterKey, item.id, full.uri);
+      return plain.exists ? plain : full;
+    } catch {
+      return full;
+    }
+  })();
+
+  inflightThumbs.set(item.id, task);
+  task.catch(() => inflightThumbs.delete(item.id));
+  return task;
 }
 
 export function errorMessage(error: unknown): string {

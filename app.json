@@ -48,7 +48,16 @@
           "photosPermission": "Allow $(PRODUCT_NAME) to select media to encrypt.",
           "microphonePermission": false
         }
-      ]
+      ],
+      [
+        "react-native-google-mobile-ads",
+        {
+          "androidAppId": "ca-app-pub-6208140455870067~2434892889",
+          "iosAppId": "ca-app-pub-3940256099942544~1458002511"
+        }
+      ],
+      "expo-font",
+      "expo-image"
     ],
     "experiments": {
       "typedRoutes": true,

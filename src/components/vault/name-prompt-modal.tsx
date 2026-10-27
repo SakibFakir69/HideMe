@@ -10,7 +10,7 @@ import {
 } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
-import { Spacing } from '@/constants/theme';
+import { Fonts, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
 interface NamePromptModalProps {
@@ -142,8 +142,8 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
   },
   input: {
+    fontFamily: Fonts.sansMedium,
     fontSize: 16,
-    fontWeight: 500,
     paddingVertical: Spacing.two,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
@@ -163,7 +163,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   submit: {
-    backgroundColor: '#208AEF',
+    backgroundColor: '#6366F1',
   },
   submitText: {
     color: '#ffffff',

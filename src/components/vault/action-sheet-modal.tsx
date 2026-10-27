@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { Alert, Modal, Pressable, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
-import { Spacing } from '@/constants/theme';
+import { Fonts, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
 export interface SheetAction {
@@ -117,7 +117,7 @@ const styles = StyleSheet.create({
     borderTopWidth: StyleSheet.hairlineWidth,
   },
   destructive: {
-    color: '#D9342B',
-    fontWeight: 700,
+    color: '#EF4444',
+    fontFamily: Fonts.sansBold,
   },
 });

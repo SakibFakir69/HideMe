@@ -92,7 +92,7 @@ export default function BinScreen() {
                 accessibilityRole="button"
                 accessibilityLabel="Empty bin"
                 style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]}>
-                <Ionicons name="trash-outline" size={18} color="#D9342B" />
+                <Ionicons name="trash-outline" size={18} color="#EF4444" />
               </Pressable>
             ) : (
               <View style={styles.iconButton} />
@@ -143,7 +143,7 @@ export default function BinScreen() {
           {
             label: 'Delete forever',
             destructive: true,
-            icon: <Ionicons name="trash-outline" size={18} color="#D9342B" />,
+            icon: <Ionicons name="trash-outline" size={18} color="#EF4444" />,
             onSelect: async () => {
               if (sheetItem) await onDeleteForever(sheetItem);
             },

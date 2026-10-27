@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
-import { Spacing } from '@/constants/theme';
+import { Fonts, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
 interface SelectionBarProps {
@@ -11,7 +11,7 @@ interface SelectionBarProps {
   total: number;
   onCancel: () => void;
   onSelectAll: () => void;
-  onMove: () => void;
+  onMove?: () => void;
   onDelete: () => void;
 }
 
@@ -53,20 +53,22 @@ export function SelectionBar({
 
       <View style={styles.spacer} />
 
-      <Pressable
-        onPress={onMove}
-        accessibilityRole="button"
-        accessibilityLabel={`Move ${count} selected`}
-        style={({ pressed }) => [styles.action, pressed && styles.pressed]}>
-        <Ionicons name="folder-outline" size={16} color={theme.text} />
-        <ThemedText type="small">Move</ThemedText>
-      </Pressable>
+      {onMove && (
+        <Pressable
+          onPress={onMove}
+          accessibilityRole="button"
+          accessibilityLabel={`Move ${count} selected`}
+          style={({ pressed }) => [styles.action, pressed && styles.pressed]}>
+          <Ionicons name="folder-outline" size={16} color={theme.text} />
+          <ThemedText type="small">Move</ThemedText>
+        </Pressable>
+      )}
       <Pressable
         onPress={onDelete}
         accessibilityRole="button"
         accessibilityLabel={`Move ${count} selected to bin`}
         style={({ pressed }) => [styles.action, styles.destructive, pressed && styles.pressed]}>
-        <Ionicons name="trash-outline" size={16} color="#D9342B" />
+        <Ionicons name="trash-outline" size={16} color="#EF4444" />
         <ThemedText type="small" style={styles.destructiveText}>
           Delete
         </ThemedText>
@@ -118,8 +120,8 @@ const styles = StyleSheet.create({
     // tint comes from the red icon/label
   },
   destructiveText: {
-    color: '#D9342B',
-    fontWeight: 700,
+    color: '#EF4444',
+    fontFamily: Fonts.sansBold,
   },
   pressed: {
     opacity: 0.7,

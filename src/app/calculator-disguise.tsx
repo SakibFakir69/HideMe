@@ -9,6 +9,7 @@ import { ThemedView } from '@/components/themed-view';
 import { Fonts, MaxContentWidth, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { evaluateExpression, formatResult } from '@/lib/calc-engine';
+import { maybeShowInterstitial } from '@/lib/ads';
 import {
   MAX_CODE_LENGTH,
   MIN_CODE_LENGTH,
@@ -214,6 +215,7 @@ export default function CalculatorDisguiseScreen() {
           navigatingRef.current = true;
           unlock(masterKey);
           router.replace('/vault');
+          void maybeShowInterstitial();
         } finally {
           verifyingRef.current = false;
         }
@@ -281,36 +283,39 @@ export default function CalculatorDisguiseScreen() {
 
   const preview =
     !calc.evaluated && /[+\-*/]/.test(calc.expr) ? evaluateExpression(calc.expr) : null;
+  const shownPreview = preview !== null && Number.isFinite(preview) ? formatResult(preview) : null;
+  // Board layout: small expression line above a large live result.
+  const bigValue = calc.expr === '' ? '0' : (shownPreview ?? displayExpr(calc.expr));
+  const smallLine =
+    lockRemaining > 0
+      ? `Locked · ${formatCountdown(lockRemaining)}`
+      : notice !== null
+        ? '= Error'
+        : shownPreview !== null || calc.evaluated
+          ? displayExpr(calc.expr)
+          : '';
 
   return (
     <ThemedView style={styles.container}>
       <SafeAreaView style={styles.safeArea}>
         <View style={styles.inner}>
           <View style={styles.display}>
+            <Text style={[styles.preview, { color: theme.textSecondary }]} numberOfLines={1}>
+              {smallLine}
+            </Text>
             <Text
               style={[styles.displayText, { color: theme.text }]}
               numberOfLines={1}
               adjustsFontSizeToFit
               minimumFontScale={0.35}
               selectable={false}>
-              {calc.expr === '' ? '0' : displayExpr(calc.expr)}
-            </Text>
-            <Text style={[styles.preview, { color: theme.textSecondary }]} numberOfLines={1}>
-              {lockRemaining > 0
-                ? `Locked · ${formatCountdown(lockRemaining)}`
-                : notice !== null
-                  ? `= ${notice}`
-                  : preview !== null && Number.isFinite(preview)
-                    ? `= ${formatResult(preview)}`
-                    : ''}
+              {bigValue}
             </Text>
           </View>
 
-          <View style={[styles.keypad, { backgroundColor: theme.backgroundSelected }]}>
+          <View style={styles.keypad}>
             {KEYS.map((row, rowIndex) => (
-              <View
-                key={rowIndex}
-                style={[styles.row, { backgroundColor: theme.background }]}>
+              <View key={rowIndex} style={styles.row}>
                 {row.map((key) => (
                   <CalcKey
                     key={key.label}
@@ -328,8 +333,6 @@ export default function CalculatorDisguiseScreen() {
     </ThemedView>
   );
 }
-
-const LINE = 1;
 
 const styles = StyleSheet.create({
   container: {
@@ -361,23 +364,23 @@ const styles = StyleSheet.create({
     fontSize: 56,
     textAlign: 'right',
     width: '100%',
+    fontVariant: ['tabular-nums'],
   },
   preview: {
     fontFamily: Fonts.mono,
-    fontSize: 18,
+    fontSize: 16,
     textAlign: 'right',
     width: '100%',
-    minHeight: 24,
+    minHeight: 22,
   },
   keypad: {
     flex: 2,
-    gap: LINE,
-    padding: LINE,
-    borderRadius: 0,
+    gap: Spacing.two,
+    paddingBottom: Spacing.two,
   },
   row: {
     flex: 1,
     flexDirection: 'row',
-    gap: LINE,
+    gap: Spacing.two,
   },
 });

@@ -15,10 +15,12 @@ import {
 const STORAGE_KEY = 'vault.secret.v1';
 const BIOMETRIC_KEY = 'vault.mk.biometric';
 const ALGO = 'pbkdf2-sha256';
-// 150k: OWASP's 600k figure targets server CPUs; on mobile (esp. emulator/dev
-// JS threads) 600k took minutes. 150k keeps solid stretching at usable UX.
+// 210k: OWASP's 2023+ documented minimum for PBKDF2-SHA256. On pure-JS mobile
+// this takes tens of seconds on debug Hermes — validate unlock time on a
+// release build; if it is still too slow the fix is native PBKDF2
+// (react-native-quick-crypto), not fewer iterations.
 // Stored records carry their own `c`, so old setups keep their original cost.
-export const PBKDF2_ROUNDS = 150_000;
+export const PBKDF2_ROUNDS = 210_000;
 const ITERATIONS = PBKDF2_ROUNDS;
 const SALT_BYTES = 16;
 const DK_BYTES = 64; // [0:32] = verify hash, [32:64] = key-encryption key

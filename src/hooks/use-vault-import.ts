@@ -5,6 +5,7 @@ import * as ImagePicker from 'expo-image-picker';
 
 import { errorMessage, importAssets, type ImportProgress, type PickedAsset } from '@/lib/vault-store';
 import { getMasterKey } from '@/lib/vault-session';
+import { maybeShowInterstitial } from '@/lib/ads';
 
 export type ImportKind = 'media' | 'document';
 
@@ -44,6 +45,7 @@ export function useVaultImport(onImported?: () => Promise<void>) {
           onProgress: setProgress,
         });
         await onImported?.();
+        void maybeShowInterstitial();
       } catch (error) {
         Alert.alert('Import failed', errorMessage(error));
       } finally {

@@ -13,6 +13,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ActionSheetModal } from '@/components/vault/action-sheet-modal';
+import { AdBanner } from '@/components/vault/ad-banner';
 import { confirmDestructive } from '@/components/vault/confirm';
 import { ImportProgressModal } from '@/components/vault/import-progress-modal';
 import { ItemTile } from '@/components/vault/item-tile';
@@ -24,6 +25,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
+import { useDebouncedValue } from '@/hooks/use-debounced-value';
 import { useVaultImport } from '@/hooks/use-vault-import';
 import { useVaultIndex } from '@/hooks/use-vault-index';
 import { getMasterKey } from '@/lib/vault-session';
@@ -43,6 +45,8 @@ export default function FolderScreen() {
   const [selected, setSelected] = useState<Set<string> | null>(null);
   const [moveOpen, setMoveOpen] = useState(false);
   const selectMode = selected !== null;
+  // Results recompute only after typing pauses — no empty flash mid-word.
+  const effectiveQuery = useDebouncedValue(query, 250);
 
   const toggleSelect = (id: string) =>
     setSelected((prev) => {
@@ -61,9 +65,9 @@ export default function FolderScreen() {
 
   const items = useMemo(() => {
     if (!index || !id) return [];
-    const scoped = searchItems(index, query.trim(), id);
+    const scoped = searchItems(index, effectiveQuery.trim(), id);
     return scoped;
-  }, [index, id, query]);
+  }, [index, id, effectiveQuery]);
 
   const selectAll = () => setSelected(new Set(items.map((it) => it.id)));
 
@@ -173,7 +177,7 @@ export default function FolderScreen() {
         <View style={styles.emptyBox}>
           <Ionicons name="folder-open-outline" size={34} color={theme.textSecondary} />
           <ThemedText type="small" themeColor="textSecondary" style={styles.emptyText}>
-            {query ? 'Nothing matches in this folder.' : 'This folder is empty.'}
+            {effectiveQuery ? 'Nothing matches in this folder.' : 'This folder is empty.'}
           </ThemedText>
         </View>
       );
@@ -195,8 +199,11 @@ export default function FolderScreen() {
             selectMode && styles.listContentSelecting,
           ]}
           style={styles.listFlex}
-          ListHeaderComponent={renderHeader}
-          ListEmptyComponent={renderEmpty}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          // Keep the header mounted across keystrokes (see vault home).
+          ListHeaderComponent={renderHeader()}
+          ListEmptyComponent={renderEmpty() ?? undefined}
           renderItem={({ item }) => (
             <ItemTile
               item={item}
@@ -213,6 +220,7 @@ export default function FolderScreen() {
           initialNumToRender={9}
           windowSize={7}
           removeClippedSubviews
+          ListFooterComponent={selectMode ? undefined : <AdBanner />}
         />
         {selectMode && (
           <SelectionBar
@@ -250,7 +258,7 @@ export default function FolderScreen() {
           {
             label: 'Delete folder',
             destructive: true,
-            icon: <Ionicons name="trash-outline" size={18} color="#D9342B" />,
+            icon: <Ionicons name="trash-outline" size={18} color="#EF4444" />,
             onSelect: () => void onDelete(),
           },
         ]}

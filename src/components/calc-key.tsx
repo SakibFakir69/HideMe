@@ -1,6 +1,7 @@
-import { Pressable, StyleSheet, Text, useColorScheme } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Pressable, StyleSheet, Text } from 'react-native';
 
-import { Fonts, Spacing } from '@/constants/theme';
+import { BrandGradient, Fonts, Palette, Radius } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
 export type KeyVariant = 'digit' | 'fn' | 'op' | 'accent';
@@ -12,48 +13,71 @@ interface CalcKeyProps {
   span?: number;
 }
 
-const ACCENT_LIGHT = '#B87D24';
-const ACCENT_DARK = '#E8A33D';
-const ON_ACCENT = '#161006';
-
 export function CalcKey({ label, onPress, variant = 'digit', span = 1 }: CalcKeyProps) {
   const theme = useTheme();
-  const scheme = useColorScheme();
-  const accent = scheme === 'dark' ? ACCENT_DARK : ACCENT_LIGHT;
 
   const surface =
-    variant === 'accent'
-      ? accent
-      : variant === 'digit'
-        ? theme.background
-        : variant === 'op'
-          ? theme.backgroundSelected
-          : theme.backgroundElement;
+    variant === 'digit'
+      ? theme.backgroundElement
+      : variant === 'op'
+        ? Palette.primary
+        : 'transparent';
 
   const foreground =
-    variant === 'accent' ? ON_ACCENT : variant === 'digit' ? theme.text : theme.textSecondary;
+    variant === 'op' || variant === 'accent'
+      ? '#FFFFFF'
+      : variant === 'digit'
+        ? theme.text
+        : theme.textSecondary;
+
+  const keyStyle = (
+    pressed: boolean,
+  ) => ({
+    backgroundColor: surface,
+    flexGrow: span,
+    flexBasis: 0,
+    opacity: pressed ? 0.7 : 1,
+  });
+
+  const labelNode = (
+    <Text
+      style={[
+        styles.label,
+        variant === 'digit' ? styles.labelDigit : styles.labelFn,
+        { color: foreground },
+      ]}
+      numberOfLines={1}
+      adjustsFontSizeToFit
+      minimumFontScale={0.5}>
+      {label}
+    </Text>
+  );
+
+  if (variant === 'accent') {
+    return (
+      <Pressable
+        onPress={onPress}
+        accessibilityRole="button"
+        accessibilityLabel={label}
+        style={({ pressed }) => [styles.key, keyStyle(pressed)]}>
+        <LinearGradient
+          colors={[...BrandGradient]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.accentFill}>
+          {labelNode}
+        </LinearGradient>
+      </Pressable>
+    );
+  }
 
   return (
     <Pressable
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={label}
-      style={({ pressed }) => [
-        styles.key,
-        { backgroundColor: surface, flexGrow: span, flexBasis: 0 },
-        pressed && styles.pressed,
-      ]}>
-      <Text
-        style={[
-          styles.label,
-          variant === 'digit' ? styles.labelDigit : styles.labelFn,
-          { color: foreground },
-        ]}
-        numberOfLines={1}
-        adjustsFontSizeToFit
-        minimumFontScale={0.5}>
-        {label}
-      </Text>
+      style={({ pressed }) => [styles.key, keyStyle(pressed)]}>
+      {labelNode}
     </Pressable>
   );
 }
@@ -61,25 +85,32 @@ export function CalcKey({ label, onPress, variant = 'digit', span = 1 }: CalcKey
 const styles = StyleSheet.create({
   key: {
     flex: 1,
-    minHeight: 64,
+    minHeight: 62,
+    borderRadius: Radius.pill,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 0,
-    paddingHorizontal: Spacing.two,
+    paddingHorizontal: 8,
   },
-  pressed: {
-    opacity: 0.55,
+  accentFill: {
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    position: 'absolute',
+    borderRadius: Radius.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   label: {
     textAlign: 'center',
   },
   labelDigit: {
     fontFamily: Fonts.mono,
-    fontSize: 26,
+    fontSize: 25,
     fontVariant: ['tabular-nums'],
   },
   labelFn: {
-    fontSize: 20,
-    fontWeight: '600',
+    fontFamily: Fonts.sansSemiBold,
+    fontSize: 21,
   },
 });

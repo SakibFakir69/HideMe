@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
-import { Spacing } from '@/constants/theme';
+import { Fonts, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { MAX_CODE_LENGTH, MIN_CODE_LENGTH, changeSecretCode } from '@/lib/vault-secret';
 
@@ -195,6 +195,7 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
   },
   input: {
+    fontFamily: Fonts.mono,
     fontSize: 22,
     letterSpacing: 4,
     paddingVertical: Spacing.two,
@@ -219,7 +220,7 @@ const styles = StyleSheet.create({
     minWidth: 92,
   },
   submit: {
-    backgroundColor: '#208AEF',
+    backgroundColor: '#6366F1',
   },
   submitText: {
     color: '#ffffff',

@@ -3,6 +3,7 @@ import { AppState, type AppStateStatus } from 'react-native';
 
 import {
   DEFAULT_AUTOLOCK_SECONDS,
+  isAutoLockSuppressed,
   isValidAutoLockSeconds,
   shouldAutoLock,
   type AutoLockSeconds,
@@ -12,6 +13,7 @@ import { isUnlocked, lock } from './vault-session';
 export {
   AUTOLOCK_OPTIONS,
   DEFAULT_AUTOLOCK_SECONDS,
+  isAutoLockSuppressed,
   shouldAutoLock,
   type AutoLockSeconds,
 } from './vault-autolock-core';
@@ -25,11 +27,13 @@ export {
  */
 
 const STORAGE_KEY = 'vault.autolock';
+const OVERRIDE_KEY = 'vault.autolock.overrideUntil';
 
 let cachedThreshold: AutoLockSeconds = DEFAULT_AUTOLOCK_SECONDS;
 let cacheLoaded = false;
 let started = false;
 let backgroundedAt: number | null = null;
+let overrideUntil = 0;
 
 async function readStoredSeconds(): Promise<AutoLockSeconds> {
   try {
@@ -82,8 +86,39 @@ function handleAppStateChange(state: AppStateStatus): void {
     const elapsed = Date.now() - backgroundedAt;
     backgroundedAt = null;
     if (!isUnlocked()) return;
+    // "Immediately" always locks; a rewarded pause only suppresses timed locks.
+    if (isAutoLockSuppressed(Date.now(), overrideUntil, cachedThreshold)) return;
     if (shouldAutoLock(elapsed, cachedThreshold)) lock();
   }
+}
+
+async function loadOverride(): Promise<void> {
+  try {
+    if (!(await SecureStore.isAvailableAsync())) return;
+    const raw = await SecureStore.getItemAsync(OVERRIDE_KEY);
+    const parsed = Number(raw ?? 0);
+    overrideUntil = Number.isFinite(parsed) && parsed > Date.now() ? parsed : 0;
+  } catch {
+    overrideUntil = 0;
+  }
+}
+
+/** Granted by a completed rewarded ad: pauses *timed* auto-lock until then. */
+export async function grantAutoLockPause(durationMs: number): Promise<number> {
+  overrideUntil = Date.now() + durationMs;
+  try {
+    if (await SecureStore.isAvailableAsync()) {
+      await SecureStore.setItemAsync(OVERRIDE_KEY, String(overrideUntil));
+    }
+  } catch {
+    // persistence is best-effort; in-memory pause still applies
+  }
+  return overrideUntil;
+}
+
+/** Timestamp (ms) until which timed auto-lock is paused; 0 when inactive. */
+export function getAutoLockOverrideUntil(): number {
+  return overrideUntil;
 }
 
 /**
@@ -94,5 +129,6 @@ export function startAutoLockWatcher(): void {
   if (started) return;
   started = true;
   void getAutoLockSeconds(); // warm the cache
+  void loadOverride();
   AppState.addEventListener('change', handleAppStateChange);
 }

@@ -32,6 +32,18 @@ npx expo run:ios
 # or: eas build --profile development
 ```
 
+### Android SDK path (local only)
+
+`android/` is generated and git-ignored, so Gradle needs a machine-local
+`android/local.properties` (also ignored):
+
+```properties
+sdk.dir=C:/Users/<you>/AppData/Local/Android/Sdk
+```
+
+`npx expo prebuild` regenerates the whole native folder and deletes this file —
+recreate it afterwards, or export `ANDROID_HOME` instead.
+
 ## Commands
 
 ```bash

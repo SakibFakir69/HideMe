@@ -16,3 +16,18 @@ export function shouldAutoLock(elapsedMs: number, thresholdS: number): boolean {
 export function isValidAutoLockSeconds(value: unknown): value is AutoLockSeconds {
   return typeof value === 'number' && (AUTOLOCK_OPTIONS as readonly number[]).includes(value);
 }
+
+/**
+ * A rewarded pause suppresses *timed* auto-lock until overrideUntil.
+ * Threshold 0 ("Immediately") is a deliberate security choice and is
+ * never suppressed.
+ */
+export function isAutoLockSuppressed(
+  nowMs: number,
+  overrideUntilMs: number,
+  thresholdS: number,
+): boolean {
+  if (thresholdS <= 0) return false;
+  if (!Number.isFinite(overrideUntilMs) || overrideUntilMs <= 0) return false;
+  return nowMs < overrideUntilMs;
+}

@@ -4,10 +4,10 @@ import { useEffect, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 
 import { formatDuration } from '@/components/vault/format';
-import { Spacing } from '@/constants/theme';
+import { Fonts, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { getMasterKey } from '@/lib/vault-session';
-import { decryptToCache, hasCachedPlain, plainFileFor, type VaultItem } from '@/lib/vault-store';
+import { hasCachedPlain, loadThumb, plainFileFor, type VaultItem } from '@/lib/vault-store';
 
 interface ThumbnailProps {
   item: VaultItem;
@@ -15,8 +15,9 @@ interface ThumbnailProps {
 }
 
 /**
- * Grid thumbnail. Photos are decrypted into the session cache on demand
- * (and only then — videos/documents never decrypt for the grid).
+ * Grid thumbnail. Photos use the small encrypted thumb (decrypts in
+ * milliseconds); items still warming from the legacy backfill path may
+ * decrypt the full file once. Documents/videos render icons only.
  */
 export function Thumbnail({ item, size }: ThumbnailProps) {
   const theme = useTheme();
@@ -28,7 +29,7 @@ export function Thumbnail({ item, size }: ThumbnailProps) {
   useEffect(() => {
     if (item.kind !== 'photo' || uri) return;
     let cancelled = false;
-    decryptToCache(getMasterKey(), item)
+    loadThumb(getMasterKey(), item)
       .then((file) => {
         if (!cancelled) setUri(file.uri);
       })
@@ -100,6 +101,6 @@ const styles = StyleSheet.create({
   durationText: {
     color: '#ffffff',
     fontSize: 10,
-    fontWeight: 600,
+    fontFamily: Fonts.sansSemiBold,
   },
 });

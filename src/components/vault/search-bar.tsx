@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 
-import { Spacing } from '@/constants/theme';
+import { Fonts, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
 interface SearchBarProps {
@@ -24,7 +24,10 @@ export function SearchBar({ value, onChange, placeholder = 'Search' }: SearchBar
         autoCorrect={false}
         autoCapitalize="none"
         returnKeyType="search"
+        blurOnSubmit={false}
         clearButtonMode="never"
+        selectionColor={theme.tint}
+        underlineColorAndroid="transparent"
       />
       {value.length > 0 && (
         <Pressable
@@ -50,8 +53,9 @@ const styles = StyleSheet.create({
   },
   input: {
     flex: 1,
+    fontFamily: Fonts.sansMedium,
     fontSize: 15,
-    fontWeight: 500,
     padding: 0,
+    paddingVertical: 0,
   },
 });

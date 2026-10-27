@@ -1,4 +1,11 @@
 
+
+
+#
+ add onboadring ui  [ based on screen]
+
+
+
 1. fix pin set up enter pin ( fast , and simple )
 2. fix all type object import issue
 3. fix instant show 

@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import {
@@ -7,7 +8,6 @@ import {
   Dimensions,
   FlatList,
   Pressable,
-  ScrollView,
   StyleSheet,
   View,
 } from 'react-native';
@@ -15,8 +15,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { formatBytes } from '@/components/vault/format';
 import { ActionSheetModal } from '@/components/vault/action-sheet-modal';
+import { AdBanner } from '@/components/vault/ad-banner';
 import { confirmDestructive } from '@/components/vault/confirm';
-import { ImportProgressModal } from '@/components/vault/import-progress-modal';
 import { ItemTile } from '@/components/vault/item-tile';
 import { MoveItemsSheet } from '@/components/vault/move-items-sheet';
 import { NamePromptModal } from '@/components/vault/name-prompt-modal';
@@ -24,9 +24,19 @@ import { SearchBar } from '@/components/vault/search-bar';
 import { SelectionBar } from '@/components/vault/selection-bar';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { MaxContentWidth, Spacing } from '@/constants/theme';
+import { CategoryTile } from '@/components/ui/category-tile';
+import { Fab } from '@/components/ui/fab';
+import { SectionTitle } from '@/components/ui/section-title';
+import {
+  BrandGradient,
+  CategoryColor,
+  Fonts,
+  MaxContentWidth,
+  Radius,
+  Spacing,
+} from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
-import { useVaultImport } from '@/hooks/use-vault-import';
+import { useDebouncedValue } from '@/hooks/use-debounced-value';
 import { useVaultIndex } from '@/hooks/use-vault-index';
 import { getMasterKey, lock } from '@/lib/vault-session';
 import {
@@ -41,12 +51,15 @@ import type { VaultFolder } from '@/lib/vault-store';
 
 const NUM_COLUMNS = 3;
 const GRID_GAP = Spacing.two;
+const FOLDER_ICON = '#3B82F6';
+
+type Category = 'all' | 'photo' | 'video' | 'document';
 
 export default function VaultHomeScreen() {
   const theme = useTheme();
   const { index, error, loading, refresh } = useVaultIndex();
-  const { busy: importing, progress, importAssets } = useVaultImport(refresh);
   const [query, setQuery] = useState('');
+  const [category, setCategory] = useState<Category>('all');
   const [prompt, setPrompt] = useState<null | {
     mode: 'new-folder' | 'rename-folder';
     folder?: VaultFolder;
@@ -55,6 +68,9 @@ export default function VaultHomeScreen() {
   const [selected, setSelected] = useState<Set<string> | null>(null);
   const [moveOpen, setMoveOpen] = useState(false);
   const selectMode = selected !== null;
+  // Results recompute only after typing pauses — previous results stay
+  // visible in the gap, so the grid never flashes empty mid-word.
+  const effectiveQuery = useDebouncedValue(query, 250);
 
   const toggleSelect = (id: string) =>
     setSelected((prev) => {
@@ -66,17 +82,37 @@ export default function VaultHomeScreen() {
     });
   const startSelect = (id: string) => setSelected(new Set([id]));
 
+  const activeItems = useMemo(
+    () => (index ? searchItems(index, '') : []),
+    [index],
+  );
+
+  const counts = useMemo(() => {
+    const base = { all: activeItems.length, photo: 0, video: 0, document: 0 };
+    for (const item of activeItems) base[item.kind] += 1;
+    return base;
+  }, [activeItems]);
+
   const folders = useMemo(() => {
     if (!index) return [];
-    const q = query.trim().toLowerCase();
+    const q = effectiveQuery.trim().toLowerCase();
     if (!q) return index.folders;
     return index.folders.filter((f) => f.name.toLowerCase().includes(q));
-  }, [index, query]);
+  }, [index, effectiveQuery]);
+
+  const folderCounts = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const item of activeItems) {
+      if (item.folderId) map.set(item.folderId, (map.get(item.folderId) ?? 0) + 1);
+    }
+    return map;
+  }, [activeItems]);
 
   const items = useMemo(() => {
     if (!index) return [];
-    return searchItems(index, query.trim());
-  }, [index, query]);
+    const base = searchItems(index, effectiveQuery.trim());
+    return category === 'all' ? base : base.filter((it) => it.kind === category);
+  }, [index, effectiveQuery, category]);
 
   const selectAll = () => setSelected(new Set(items.map((it) => it.id)));
 
@@ -139,12 +175,27 @@ export default function VaultHomeScreen() {
     [refresh],
   );
 
+  const gridLabel = effectiveQuery
+    ? `${items.length} RESULT${items.length === 1 ? '' : 'S'}`
+    : category === 'all'
+      ? `ALL ITEMS · ${items.length} · ${formatBytes(items.reduce((n, it) => n + it.size, 0))}`
+      : `${category.toUpperCase()}S · ${items.length}`;
+
   const renderHeader = () => (
     <View style={styles.headerBlock}>
       <View style={styles.toolbarRow}>
-        <ThemedText type="subtitle" style={styles.title}>
-          Vault
-        </ThemedText>
+        <View style={styles.brandRow}>
+          <LinearGradient
+            colors={[...BrandGradient]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.brandMark}>
+            <Ionicons name="calculator" size={16} color="#FFFFFF" />
+          </LinearGradient>
+          <ThemedText type="subtitle" style={styles.title}>
+            HideMe
+          </ThemedText>
+        </View>
         <View style={styles.toolbarActions}>
           <IconButton
             icon="trash-outline"
@@ -152,46 +203,59 @@ export default function VaultHomeScreen() {
             onPress={() => router.push('/vault/bin')}
           />
           <IconButton icon="lock-closed-outline" label="Lock vault" onPress={onLock} />
-          <IconButton
-            icon="settings-outline"
-            label="Settings"
-            onPress={() => router.push('/vault/settings')}
+        </View>
+      </View>
+
+      <SearchBar value={query} onChange={setQuery} placeholder="Search your files…" />
+
+      <View style={styles.tileGrid}>
+        <View style={styles.tileRow}>
+          <CategoryTile
+            icon="image"
+            label="Photos"
+            count={counts.photo}
+            color={CategoryColor.photo}
+            active={category === 'photo'}
+            onPress={() => setCategory((c) => (c === 'photo' ? 'all' : 'photo'))}
+          />
+          <CategoryTile
+            icon="videocam"
+            label="Videos"
+            count={counts.video}
+            color={CategoryColor.video}
+            active={category === 'video'}
+            onPress={() => setCategory((c) => (c === 'video' ? 'all' : 'video'))}
+          />
+        </View>
+        <View style={styles.tileRow}>
+          <CategoryTile
+            icon="document-text"
+            label="Documents"
+            count={counts.document}
+            color={CategoryColor.document}
+            active={category === 'document'}
+            onPress={() => setCategory((c) => (c === 'document' ? 'all' : 'document'))}
+          />
+          <CategoryTile
+            icon="apps"
+            label="All files"
+            count={counts.all}
+            color={CategoryColor.all}
+            active={category === 'all'}
+            onPress={() => setCategory('all')}
           />
         </View>
       </View>
 
-      <SearchBar value={query} onChange={setQuery} placeholder="Search files and folders" />
-
-      <View style={styles.actionRow}>
-        <ActionButton
-          icon="folder-open-outline"
-          label="Folder"
-          onPress={() => setPrompt({ mode: 'new-folder' })}
+      <View style={styles.section}>
+        <SectionTitle
+          label="Folders"
+          actionLabel="＋ New"
+          onAction={() => setPrompt({ mode: 'new-folder' })}
         />
-        <ActionButton
-          icon="images-outline"
-          label="Photo / video"
-          onPress={() => void importAssets('media', null)}
-          disabled={importing}
-        />
-        <ActionButton
-          icon="document-outline"
-          label="Document"
-          onPress={() => void importAssets('document', null)}
-          disabled={importing}
-        />
-      </View>
-
-      {folders.length > 0 && (
-        <View style={styles.section}>
-          <ThemedText type="smallBold" themeColor="textSecondary" style={styles.sectionLabel}>
-            FOLDERS
-          </ThemedText>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.folderRow}>
-            {folders.map((folder) => (
+        {folders.length > 0 ? (
+          <View style={[styles.folderCard, { backgroundColor: theme.backgroundElement }]}>
+            {folders.map((folder, i) => (
               <Pressable
                 key={folder.id}
                 onPress={() =>
@@ -199,39 +263,45 @@ export default function VaultHomeScreen() {
                 }
                 onLongPress={() => setFolderSheet(folder)}
                 style={({ pressed }) => [
-                  styles.folderCard,
-                  { backgroundColor: theme.backgroundElement },
+                  styles.folderRow,
+                  i < folders.length - 1 && {
+                    borderBottomWidth: StyleSheet.hairlineWidth,
+                    borderBottomColor: theme.border,
+                  },
                   pressed && styles.pressed,
                 ]}>
-                <View style={styles.folderCardTop}>
-                  <Ionicons name="folder" size={22} color="#F2B84B" />
-                  <Pressable
-                    onPress={() => setFolderSheet(folder)}
-                    hitSlop={Spacing.two}
-                    accessibilityRole="button"
-                    accessibilityLabel={`Actions for folder ${folder.name}`}>
-                    <Ionicons name="ellipsis-horizontal" size={16} color={theme.textSecondary} />
-                  </Pressable>
+                <View style={styles.folderIcon}>
+                  <Ionicons name="folder" size={18} color={FOLDER_ICON} />
                 </View>
-                <ThemedText type="small" numberOfLines={1} style={styles.folderName}>
-                  {folder.name}
-                </ThemedText>
+                <View style={styles.folderText}>
+                  <ThemedText type="small" numberOfLines={1}>
+                    {folder.name}
+                  </ThemedText>
+                  <ThemedText type="code" themeColor="textSecondary">
+                    {`${folderCounts.get(folder.id) ?? 0} item${
+                      folderCounts.get(folder.id) === 1 ? '' : 's'
+                    }`}
+                  </ThemedText>
+                </View>
+                <Pressable
+                  onPress={() => setFolderSheet(folder)}
+                  hitSlop={Spacing.two}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Actions for folder ${folder.name}`}>
+                  <Ionicons name="ellipsis-horizontal" size={16} color={theme.textSecondary} />
+                </Pressable>
+                <Ionicons name="chevron-forward" size={16} color={theme.textSecondary} />
               </Pressable>
             ))}
-          </ScrollView>
-        </View>
-      )}
+          </View>
+        ) : (
+          <ThemedText type="code" themeColor="textSecondary" style={styles.noFolders}>
+            {effectiveQuery ? 'No folders match your search.' : 'No folders yet — create one to group files.'}
+          </ThemedText>
+        )}
+      </View>
 
-      {!query && index && items.length > 0 && (
-        <ThemedText type="smallBold" themeColor="textSecondary" style={styles.sectionLabel}>
-          ALL ITEMS · {items.length} · {formatBytes(items.reduce((n, it) => n + it.size, 0))}
-        </ThemedText>
-      )}
-      {query && (
-        <ThemedText type="smallBold" themeColor="textSecondary" style={styles.sectionLabel}>
-          {items.length} RESULT{items.length === 1 ? '' : 'S'}
-        </ThemedText>
-      )}
+      <SectionTitle label={gridLabel} />
     </View>
   );
 
@@ -239,7 +309,7 @@ export default function VaultHomeScreen() {
     if (loading) {
       return (
         <View style={styles.emptyBox}>
-          <ActivityIndicator color={theme.textSecondary} />
+          <ActivityIndicator color={theme.tint} />
         </View>
       );
     }
@@ -252,14 +322,24 @@ export default function VaultHomeScreen() {
         </View>
       );
     }
-    if (items.length === 0 && folders.length === 0) {
+    if (items.length === 0 && (folders.length > 0 || !effectiveQuery)) {
+      if (category !== 'all' || effectiveQuery) {
+        return (
+          <View style={styles.emptyBox}>
+            <Ionicons name="search-outline" size={30} color={theme.textSecondary} />
+            <ThemedText type="small" themeColor="textSecondary" style={styles.emptyText}>
+              {effectiveQuery ? 'Nothing matches your search.' : 'No files in this category yet.'}
+            </ThemedText>
+          </View>
+        );
+      }
+      if (folders.length > 0) return null;
       return (
         <View style={styles.emptyBox}>
           <Ionicons name="shield-checkmark-outline" size={34} color={theme.textSecondary} />
           <ThemedText type="small" themeColor="textSecondary" style={styles.emptyText}>
-            {query
-              ? 'Nothing matches your search.'
-              : 'Your vault is empty.\nImport photos, videos or documents — everything is encrypted on this device.'}
+            Your vault is empty.{'\n'}Tap + to import photos, videos or documents — everything is
+            encrypted on this device.
           </ThemedText>
         </View>
       );
@@ -269,7 +349,7 @@ export default function VaultHomeScreen() {
 
   return (
     <ThemedView style={styles.container}>
-      <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
+      <SafeAreaView style={styles.safeArea} edges={['top']}>
         <FlatList
           key={`cols-${NUM_COLUMNS}`}
           data={items}
@@ -281,8 +361,14 @@ export default function VaultHomeScreen() {
             selectMode && styles.listContentSelecting,
           ]}
           style={styles.listFlex}
-          ListHeaderComponent={renderHeader}
-          ListEmptyComponent={renderEmpty}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          // Pass an element (not a function) so the header keeps its identity
+          // while `query` changes. A new function each keystroke made
+          // FlatList remount the header — which blurred the search input and
+          // closed the keyboard after the first word.
+          ListHeaderComponent={renderHeader()}
+          ListEmptyComponent={renderEmpty() ?? undefined}
           renderItem={({ item }) => (
             <ItemTile
               item={item}
@@ -299,6 +385,7 @@ export default function VaultHomeScreen() {
           initialNumToRender={9}
           windowSize={7}
           removeClippedSubviews
+          ListFooterComponent={selectMode ? undefined : <AdBanner />}
         />
         {selectMode && (
           <SelectionBar
@@ -310,9 +397,10 @@ export default function VaultHomeScreen() {
             onDelete={() => void onDeleteSelected()}
           />
         )}
+        {!selectMode && (
+          <Fab label="Import files" onPress={() => router.push('/vault/import')} />
+        )}
       </SafeAreaView>
-
-      <ImportProgressModal progress={progress} />
 
       <MoveItemsSheet
         visible={moveOpen}
@@ -356,7 +444,7 @@ export default function VaultHomeScreen() {
           {
             label: 'Delete folder',
             destructive: true,
-            icon: <Ionicons name="trash-outline" size={18} color="#D9342B" />,
+            icon: <Ionicons name="trash-outline" size={18} color="#EF4444" />,
             onSelect: () => {
               if (folderSheet) void confirmDeleteFolder(folderSheet);
             },
@@ -394,37 +482,6 @@ function IconButton({
   );
 }
 
-function ActionButton({
-  icon,
-  label,
-  onPress,
-  disabled,
-}: {
-  icon: keyof typeof Ionicons.glyphMap;
-  label: string;
-  onPress: () => void;
-  disabled?: boolean;
-}) {
-  const theme = useTheme();
-  return (
-    <Pressable
-      onPress={onPress}
-      disabled={disabled}
-      accessibilityRole="button"
-      style={({ pressed }) => [
-        styles.actionButton,
-        { backgroundColor: theme.backgroundElement },
-        pressed && styles.pressed,
-        disabled && styles.disabled,
-      ]}>
-      <Ionicons name={icon} size={15} color={theme.text} />
-      <ThemedText type="small" numberOfLines={1} style={styles.actionLabel}>
-        {label}
-      </ThemedText>
-    </Pressable>
-  );
-}
-
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -434,7 +491,7 @@ const styles = StyleSheet.create({
   },
   listContent: {
     paddingHorizontal: Spacing.three,
-    paddingBottom: Spacing.six,
+    paddingBottom: 104,
     flexGrow: 1,
   },
   listContentSelecting: {
@@ -453,9 +510,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
   },
+  brandRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
+  },
+  brandMark: {
+    width: 30,
+    height: 30,
+    borderRadius: Radius.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   title: {
-    fontSize: 28,
-    lineHeight: 34,
+    fontSize: 24,
+    lineHeight: 30,
+    fontFamily: Fonts.sansBold,
   },
   toolbarActions: {
     flexDirection: 'row',
@@ -468,49 +538,41 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  actionRow: {
-    flexDirection: 'row',
+  tileGrid: {
     gap: Spacing.two,
   },
-  actionButton: {
-    flex: 1,
+  tileRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: Spacing.one,
-    minHeight: 40,
-    borderRadius: Spacing.three,
-    paddingHorizontal: Spacing.two,
-  },
-  actionLabel: {
-    flexShrink: 1,
+    gap: Spacing.two,
   },
   section: {
     gap: Spacing.two,
   },
-  folderRow: {
-    gap: Spacing.two,
-    paddingVertical: Spacing.one,
-  },
   folderCard: {
-    width: 104,
-    padding: Spacing.two,
-    borderRadius: Spacing.three,
-    gap: Spacing.one,
-    alignItems: 'flex-start',
+    borderRadius: Radius.lg,
+    overflow: 'hidden',
   },
-  folderCardTop: {
+  folderRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    width: '100%',
-    justifyContent: 'space-between',
+    gap: Spacing.three,
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.two + 2,
   },
-  folderName: {
-    maxWidth: '100%',
+  folderIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: Radius.sm,
+    backgroundColor: 'rgba(59,130,246,0.16)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  sectionLabel: {
-    letterSpacing: 0.6,
-    fontSize: 11,
+  folderText: {
+    flex: 1,
+    gap: 1,
+  },
+  noFolders: {
+    paddingHorizontal: Spacing.one,
   },
   gridRow: {
     gap: GRID_GAP,
@@ -529,8 +591,5 @@ const styles = StyleSheet.create({
   },
   pressed: {
     opacity: 0.75,
-  },
-  disabled: {
-    opacity: 0.5,
   },
 });

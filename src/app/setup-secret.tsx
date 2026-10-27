@@ -37,9 +37,18 @@ export default function SetupSecretScreen() {
   });
 
   useEffect(() => {
-    hasSecret().then((exists) =>
-      setForm((f) => ({ ...f, phase: exists ? 'already-set' : 'entry' })),
-    );
+    let mounted = true;
+    // A rejected/hung store read must not leave the screen stuck on "checking".
+    hasSecret()
+      .then((exists) => {
+        if (mounted) setForm((f) => ({ ...f, phase: exists ? 'already-set' : 'entry' }));
+      })
+      .catch(() => {
+        if (mounted) setForm((f) => ({ ...f, phase: 'entry' }));
+      });
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   const append = (digit: string) => {

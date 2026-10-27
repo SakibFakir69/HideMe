@@ -10,11 +10,11 @@ export default function VaultLayout() {
     <>
       <PrivacyShield />
       <Stack screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="index" />
+        <Stack.Screen name="(tabs)" />
         <Stack.Screen name="folder/[id]" />
         <Stack.Screen name="item/[id]" />
         <Stack.Screen name="bin" />
-        <Stack.Screen name="settings" />
+        <Stack.Screen name="import" />
       </Stack>
     </>
   );

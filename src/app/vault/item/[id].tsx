@@ -19,7 +19,7 @@ import { formatBytes, formatDate } from '@/components/vault/format';
 import { NamePromptModal } from '@/components/vault/name-prompt-modal';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Spacing } from '@/constants/theme';
+import { Fonts, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { useVaultIndex } from '@/hooks/use-vault-index';
 import { getMasterKey } from '@/lib/vault-session';
@@ -27,7 +27,7 @@ import { decryptToCache, errorMessage, moveItemToBin, moveItemToFolder, renameIt
 import type { VaultItem } from '@/lib/vault-store';
 
 type DecryptState =
-  | { phase: 'working'; percent: number }
+  | { phase: 'working'; percent: number; pass: 'verify' | 'decrypt' }
   | { phase: 'ready'; file: File }
   | { phase: 'error'; message: string };
 
@@ -35,11 +35,16 @@ export default function ItemScreen() {
   const theme = useTheme();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { index, loading, refresh } = useVaultIndex();
-  const [decrypt, setDecrypt] = useState<DecryptState>({ phase: 'working', percent: 0 });
+  const [decrypt, setDecrypt] = useState<DecryptState>({
+    phase: 'working',
+    percent: 0,
+    pass: 'verify',
+  });
   const [menuOpen, setMenuOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [moving, setMoving] = useState(false);
   const percentRef = useRef(0);
+  const lastPassRef = useRef<'verify' | 'decrypt'>('verify');
 
   const item = useMemo(() => index?.items.find((it) => it.id === id) ?? null, [index, id]);
 
@@ -48,7 +53,7 @@ export default function ItemScreen() {
   const [prevItem, setPrevItem] = useState<VaultItem | null>(item);
   if (item !== prevItem) {
     setPrevItem(item);
-    setDecrypt({ phase: 'working', percent: 0 });
+    setDecrypt({ phase: 'working', percent: 0, pass: 'verify' });
   }
 
   useEffect(() => {
@@ -61,9 +66,11 @@ export default function ItemScreen() {
       ({ processed, total }) => {
         if (cancelled || total <= 0) return;
         const next = Math.floor((processed / total) * 100);
-        if (next !== percentRef.current) {
+        const pass: 'verify' | 'decrypt' = processed < total / 2 ? 'verify' : 'decrypt';
+        if (next !== percentRef.current || pass !== lastPassRef.current) {
           percentRef.current = next;
-          setDecrypt({ phase: 'working', percent: next });
+          lastPassRef.current = pass;
+          setDecrypt({ phase: 'working', percent: next, pass });
         }
       },
     )
@@ -133,17 +140,36 @@ export default function ItemScreen() {
           {!item || decrypt.phase === 'working' ? (
             <View style={styles.centerBox}>
               <ActivityIndicator color={theme.textSecondary} />
-              <ThemedText type="small" themeColor="textSecondary">
-                {!item
-                  ? 'Loading…'
-                  : decrypt.phase === 'working' && decrypt.percent > 0
-                    ? `Decrypting ${decrypt.percent}%`
-                    : 'Decrypting…'}
-              </ThemedText>
+              {item && decrypt.phase === 'working' ? (
+                <>
+                  <View style={[styles.progressTrack, { backgroundColor: theme.backgroundSelected }]}>
+                    <View
+                      style={[
+                        styles.progressFill,
+                        { width: `${Math.max(2, decrypt.percent)}%` },
+                      ]}
+                    />
+                  </View>
+                  <ThemedText type="small" themeColor="textSecondary">
+                    {decrypt.percent === 0
+                      ? 'Preparing…'
+                      : decrypt.pass === 'verify'
+                        ? `Verifying integrity… ${decrypt.percent}%`
+                        : `Decrypting… ${decrypt.percent}%`}
+                  </ThemedText>
+                  <ThemedText type="code" themeColor="textSecondary" numberOfLines={1}>
+                    {item.name}
+                  </ThemedText>
+                </>
+              ) : (
+                <ThemedText type="small" themeColor="textSecondary">
+                  Loading…
+                </ThemedText>
+              )}
             </View>
           ) : decrypt.phase === 'error' ? (
             <View style={styles.centerBox}>
-              <Ionicons name="alert-circle-outline" size={30} color="#D9342B" />
+              <Ionicons name="alert-circle-outline" size={30} color="#EF4444" />
               <ThemedText type="small" themeColor="textSecondary" style={styles.errorText}>
                 {decrypt.message}
               </ThemedText>
@@ -200,7 +226,7 @@ export default function ItemScreen() {
           {
             label: 'Move to bin',
             destructive: true,
-            icon: <Ionicons name="trash-outline" size={18} color="#D9342B" />,
+            icon: <Ionicons name="trash-outline" size={18} color="#EF4444" />,
             onSelect: () => void onDelete(),
           },
         ]}
@@ -253,7 +279,7 @@ function MoveToFolderSheet({
         <Ionicons
           name={item.folderId === null ? 'radio-button-on' : 'radio-button-off'}
           size={18}
-          color={item.folderId === null ? '#208AEF' : theme.text}
+          color={item.folderId === null ? '#6366F1' : theme.text}
         />
       ),
       onSelect: async () => {
@@ -267,7 +293,7 @@ function MoveToFolderSheet({
         <Ionicons
           name={item.folderId === folder.id ? 'radio-button-on' : 'radio-button-off'}
           size={18}
-          color={item.folderId === folder.id ? '#208AEF' : theme.text}
+          color={item.folderId === folder.id ? '#6366F1' : theme.text}
         />
       ),
       onSelect: async () => {
@@ -440,6 +466,17 @@ const styles = StyleSheet.create({
     gap: Spacing.two,
     padding: Spacing.four,
   },
+  progressTrack: {
+    width: 180,
+    height: 4,
+    borderRadius: 2,
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+    borderRadius: 2,
+    backgroundColor: '#6366F1',
+  },
   image: {
     width: '100%',
     height: '100%',
@@ -454,14 +491,14 @@ const styles = StyleSheet.create({
   },
   docName: {
     textAlign: 'center',
-    fontWeight: 700,
+    fontFamily: Fonts.sansBold,
     color: undefined,
   },
   openButton: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.one,
-    backgroundColor: '#208AEF',
+    backgroundColor: '#6366F1',
     paddingHorizontal: Spacing.four,
     paddingVertical: Spacing.two,
     borderRadius: Spacing.three,

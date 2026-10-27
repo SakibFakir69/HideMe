@@ -61,7 +61,7 @@ const styles = StyleSheet.create({
   },
   fill: {
     height: '100%',
-    backgroundColor: '#208AEF',
+    backgroundColor: '#6366F1',
     borderRadius: 4,
   },
 });

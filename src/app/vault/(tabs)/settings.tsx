@@ -3,9 +3,7 @@ import * as LocalAuthentication from 'expo-local-authentication';
 import { router } from 'expo-router';
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import {
-  ActivityIndicator,
   Alert,
-  Pressable,
   ScrollView,
   StyleSheet,
   Switch,
@@ -14,17 +12,29 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ActionSheetModal } from '@/components/vault/action-sheet-modal';
+import { AdBanner } from '@/components/vault/ad-banner';
 import { ChangeCodeModal } from '@/components/vault/change-code-modal';
 import { confirmDestructive } from '@/components/vault/confirm';
 import { formatBytes } from '@/components/vault/format';
-import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Spacing } from '@/constants/theme';
+import { ScreenHeader } from '@/components/ui/screen-header';
+import { SectionTitle } from '@/components/ui/section-title';
+import { ListRow } from '@/components/ui/list-row';
+import { AUTO_LOCK_PAUSE_MS } from '@/constants/ads';
+import { Palette, Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { useVaultIndex } from '@/hooks/use-vault-index';
+import { showRewardedAd } from '@/lib/ads';
+import {
+  setThemePref,
+  useThemePref,
+  type ThemePref,
+} from '@/lib/theme-pref';
 import {
   AUTOLOCK_OPTIONS,
+  getAutoLockOverrideUntil,
   getAutoLockSeconds,
+  grantAutoLockPause,
   setAutoLockSeconds,
   type AutoLockSeconds,
 } from '@/lib/vault-autolock';
@@ -32,14 +42,29 @@ import { getMasterKey, lock } from '@/lib/vault-session';
 import { isBiometricAvailable, isBiometricEnabled, setBiometricEnabled, PBKDF2_ROUNDS } from '@/lib/vault-secret';
 import { computeStats, eraseAllContents, errorMessage } from '@/lib/vault-store';
 
+/** Long form for the picker sheet. */
 function describeAutoLock(seconds: AutoLockSeconds): string {
   if (seconds === 0) return 'Immediately';
   if (seconds < 60) return `After ${seconds} seconds`;
   return `After ${seconds / 60} minute${seconds === 60 ? '' : 's'}`;
 }
 
+/** Compact trailing value, board style: "1 minute". */
+function shortAutoLock(seconds: AutoLockSeconds): string {
+  if (seconds === 0) return 'Immediately';
+  if (seconds < 60) return `${seconds} sec`;
+  return `${seconds / 60} minute${seconds === 60 ? '' : 's'}`;
+}
+
+const THEME_LABEL: Record<ThemePref, string> = {
+  system: 'System',
+  light: 'Light',
+  dark: 'Dark',
+};
+
 export default function VaultSettingsScreen() {
   const theme = useTheme();
+  const themePref = useThemePref();
   const { index, refresh } = useVaultIndex();
   const [biometricAvailable, setBiometricAvailable] = useState(false);
   const [biometricOn, setBiometricOn] = useState(false);
@@ -48,6 +73,21 @@ export default function VaultSettingsScreen() {
   const [erasing, setErasing] = useState(false);
   const [autoLock, setAutoLock] = useState<AutoLockSeconds | null>(null);
   const [autoLockSheet, setAutoLockSheet] = useState(false);
+  const [themeSheet, setThemeSheet] = useState(false);
+  const [rewardBusy, setRewardBusy] = useState(false);
+  const [pauseLabel, setPauseLabel] = useState<string | null>(null);
+
+  const refreshPauseLabel = useCallback(() => {
+    const until = getAutoLockOverrideUntil();
+    if (until > Date.now()) {
+      const at = new Date(until);
+      setPauseLabel(
+        `Active — resumes at ${at.getHours()}:${String(at.getMinutes()).padStart(2, '0')}`,
+      );
+    } else {
+      setPauseLabel(null);
+    }
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -57,15 +97,41 @@ export default function VaultSettingsScreen() {
           setBiometricAvailable(available);
           setBiometricOn(enabled);
           setAutoLock(autoLockSeconds);
+          refreshPauseLabel();
         }
       },
     );
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [refreshPauseLabel]);
 
   const stats = index ? computeStats(index) : null;
+
+  const onWatchAd = useCallback(async () => {
+    if (rewardBusy) return;
+    setRewardBusy(true);
+    try {
+      const result = await showRewardedAd();
+      if (result === 'earned') {
+        const until = await grantAutoLockPause(AUTO_LOCK_PAUSE_MS);
+        const at = new Date(until);
+        setPauseLabel(
+          `Active — resumes at ${at.getHours()}:${String(at.getMinutes()).padStart(2, '0')}`,
+        );
+        Alert.alert(
+          'Auto-lock paused',
+          'Timed auto-lock is off for the next hour. "Lock now" and the "Immediately" setting still lock the vault.',
+        );
+      } else if (result === 'closed') {
+        Alert.alert('No reward', 'Watch the full ad to earn the auto-lock pause.');
+      } else {
+        Alert.alert('Ad not ready', 'The reward ad is still loading — try again in a few seconds.');
+      }
+    } finally {
+      setRewardBusy(false);
+    }
+  }, [rewardBusy]);
 
   const toggleBiometric = useCallback(
     async (value: boolean) => {
@@ -113,30 +179,21 @@ export default function VaultSettingsScreen() {
   return (
     <ThemedView style={styles.container}>
       <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
-        <View style={styles.headerRow}>
-          <Pressable
-            onPress={() => router.back()}
-            hitSlop={Spacing.two}
-            accessibilityRole="button"
-            accessibilityLabel="Back"
-            style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]}>
-            <Ionicons name="chevron-back" size={20} color={theme.text} />
-          </Pressable>
-          <ThemedText type="smallBold" style={styles.headerTitle}>
-            Settings
-          </ThemedText>
-          <View style={styles.iconButton} />
+        <View style={styles.headerWrap}>
+          <ScreenHeader title="Settings" onBack={() => router.back()} />
         </View>
 
         <ScrollView contentContainerStyle={styles.content}>
-          <Section label="SECURITY">
-            <Row
+          <SectionTitle label="Security" />
+          <Card>
+            <ListRow
               icon="key-outline"
               title="Change secret code"
               subtitle="Files stay encrypted under the same key"
+              divider
               onPress={() => setChangingCode(true)}
             />
-            <Row
+            <ListRow
               icon="finger-print-outline"
               title="Biometric unlock"
               subtitle={
@@ -146,24 +203,35 @@ export default function VaultSettingsScreen() {
                     : 'Unlock with Face ID or fingerprint'
                   : 'No biometric enrolled on this device'
               }
+              divider
               right={
                 biometricAvailable ? (
                   <Switch
                     value={biometricOn}
                     onValueChange={(next) => void toggleBiometric(next)}
                     disabled={biometricBusy}
-                    trackColor={{ true: '#208AEF' }}
+                    trackColor={{ true: Palette.primary }}
                   />
                 ) : undefined
               }
             />
-            <Row
+            <ListRow
               icon="timer-outline"
               title="Auto-lock"
-              subtitle={autoLock !== null ? describeAutoLock(autoLock) : 'Loading…'}
+              value={autoLock !== null ? shortAutoLock(autoLock) : '…'}
+              divider
               onPress={() => setAutoLockSheet(true)}
             />
-            <Row
+            <ListRow
+              icon="gift-outline"
+              title="Pause auto-lock for 1 hour"
+              subtitle={pauseLabel ?? 'Watch a short ad to earn it'}
+              divider
+              loading={rewardBusy}
+              disabled={rewardBusy}
+              onPress={() => void onWatchAd()}
+            />
+            <ListRow
               icon="lock-closed-outline"
               title="Lock now"
               subtitle="Clears the key and encrypted cache"
@@ -172,48 +240,65 @@ export default function VaultSettingsScreen() {
                 router.replace('/calculator-disguise');
               }}
             />
-          </Section>
+          </Card>
 
-          <Section label="STORAGE">
+          <SectionTitle label="Appearance" />
+          <Card>
+            <ListRow
+              icon="contrast-outline"
+              title="Theme"
+              value={THEME_LABEL[themePref]}
+              onPress={() => setThemeSheet(true)}
+            />
+          </Card>
+
+          <SectionTitle label="Storage" />
+          <Card>
             {stats ? (
               <>
-                <Row
+                <ListRow
                   icon="albums-outline"
                   title={`${stats.itemCount} file${stats.itemCount === 1 ? '' : 's'}`}
                   subtitle={`${stats.folderCount} folder${stats.folderCount === 1 ? '' : 's'}`}
+                  divider
                 />
-                <Row
+                <ListRow
                   icon="pie-chart-outline"
                   title={formatBytes(stats.totalBytes)}
                   subtitle="Total size of encrypted files"
+                  divider
                 />
               </>
             ) : (
-              <Row icon="albums-outline" title="Loading…" subtitle="" />
+              <ListRow icon="albums-outline" title="Loading…" subtitle="" divider />
             )}
-            <Row
+            <ListRow
               icon="trash-outline"
               title="Erase all contents"
               subtitle="Delete every file and folder"
               destructive
+              loading={erasing}
               disabled={erasing}
-              right={erasing ? <ActivityIndicator size="small" color="#D9342B" /> : undefined}
               onPress={() => void onErase()}
             />
-          </Section>
+          </Card>
 
-          <Section label="ENCRYPTION">
-            <Row
+          <SectionTitle label="Encryption" />
+          <Card>
+            <ListRow
               icon="shield-checkmark-outline"
               title="AES-256-CTR + HMAC-SHA256"
               subtitle="Per-file keys, encrypt-then-MAC"
+              divider
             />
-            <Row
+            <ListRow
               icon="speedometer-outline"
               title={`PBKDF2-SHA256 · ${PBKDF2_ROUNDS.toLocaleString('en-US')} rounds`}
               subtitle="Derives the key from your code"
             />
-          </Section>
+          </Card>
+
+          <AdBanner />
         </ScrollView>
       </SafeAreaView>
 
@@ -228,7 +313,7 @@ export default function VaultSettingsScreen() {
             <Ionicons
               name={autoLock === option ? 'radio-button-on' : 'radio-button-off'}
               size={18}
-              color={autoLock === option ? '#208AEF' : theme.text}
+              color={autoLock === option ? Palette.primary : theme.text}
             />
           ),
           onSelect: async () => {
@@ -238,72 +323,30 @@ export default function VaultSettingsScreen() {
         }))}
         onClose={() => setAutoLockSheet(false)}
       />
+
+      <ActionSheetModal
+        visible={themeSheet}
+        title="Theme"
+        actions={(['system', 'light', 'dark'] satisfies ThemePref[]).map((pref) => ({
+          label: THEME_LABEL[pref],
+          icon: (
+            <Ionicons
+              name={themePref === pref ? 'radio-button-on' : 'radio-button-off'}
+              size={18}
+              color={themePref === pref ? Palette.primary : theme.text}
+            />
+          ),
+          onSelect: () => setThemePref(pref),
+        }))}
+        onClose={() => setThemeSheet(false)}
+      />
     </ThemedView>
   );
 }
 
-function Section({ label, children }: { label: string; children: ReactNode }) {
+function Card({ children }: { children: ReactNode }) {
   const theme = useTheme();
-  return (
-    <View style={styles.section}>
-      <ThemedText type="smallBold" themeColor="textSecondary" style={styles.sectionLabel}>
-        {label}
-      </ThemedText>
-      <View style={[styles.card, { backgroundColor: theme.backgroundElement }]}>{children}</View>
-    </View>
-  );
-}
-
-function Row({
-  icon,
-  title,
-  subtitle,
-  onPress,
-  right,
-  destructive,
-  disabled,
-}: {
-  icon: keyof typeof Ionicons.glyphMap;
-  title: string;
-  subtitle?: string;
-  onPress?: () => void;
-  right?: ReactNode;
-  destructive?: boolean;
-  disabled?: boolean;
-}) {
-  const theme = useTheme();
-  const body = (
-    <View style={styles.rowInner}>
-      <Ionicons name={icon} size={18} color={destructive ? '#D9342B' : theme.text} />
-      <View style={styles.rowText}>
-        <ThemedText type="small" style={destructive ? styles.destructiveText : undefined}>
-          {title}
-        </ThemedText>
-        {subtitle !== undefined && subtitle.length > 0 && (
-          <ThemedText type="code" themeColor="textSecondary" numberOfLines={1}>
-            {subtitle}
-          </ThemedText>
-        )}
-      </View>
-      {right}
-      {onPress && !right && <Ionicons name="chevron-forward" size={15} color={theme.textSecondary} />}
-    </View>
-  );
-
-  if (!onPress) return <View style={styles.row}>{body}</View>;
-  return (
-    <Pressable
-      onPress={onPress}
-      disabled={disabled}
-      accessibilityRole="button"
-      style={({ pressed }) => [
-        styles.row,
-        pressed && { backgroundColor: theme.backgroundSelected },
-        disabled && styles.disabled,
-      ]}>
-      {body}
-    </Pressable>
-  );
+  return <View style={[styles.card, { backgroundColor: theme.backgroundElement }]}>{children}</View>;
 }
 
 const styles = StyleSheet.create({
@@ -313,65 +356,19 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
   },
-  headerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.two,
+  headerWrap: {
     paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.one,
-  },
-  headerTitle: {
-    flex: 1,
-    fontSize: 17,
-    textAlign: 'center',
-  },
-  iconButton: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    alignItems: 'center',
-    justifyContent: 'center',
+    paddingTop: Spacing.two,
   },
   content: {
     paddingHorizontal: Spacing.three,
     paddingBottom: Spacing.six,
-    gap: Spacing.four,
-    paddingTop: Spacing.two,
-  },
-  section: {
     gap: Spacing.two,
-  },
-  sectionLabel: {
-    letterSpacing: 0.6,
-    fontSize: 11,
+    paddingTop: Spacing.three,
   },
   card: {
-    borderRadius: Spacing.three,
+    borderRadius: Radius.lg,
     overflow: 'hidden',
-  },
-  row: {
-    paddingHorizontal: Spacing.three,
-    minHeight: 56,
-    justifyContent: 'center',
-  },
-  rowInner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.three,
-    paddingVertical: Spacing.two,
-  },
-  rowText: {
-    flex: 1,
-    gap: 1,
-  },
-  destructiveText: {
-    color: '#D9342B',
-    fontWeight: 700,
-  },
-  pressed: {
-    opacity: 0.75,
-  },
-  disabled: {
-    opacity: 0.5,
+    marginBottom: Spacing.three,
   },
 });

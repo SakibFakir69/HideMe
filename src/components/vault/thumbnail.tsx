@@ -1,13 +1,13 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 
 import { formatDuration } from '@/components/vault/format';
 import { Fonts, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { getMasterKey } from '@/lib/vault-session';
-import { hasCachedPlain, loadThumb, plainFileFor, type VaultItem } from '@/lib/vault-store';
+import { loadThumb, type VaultItem } from '@/lib/vault-store';
 
 interface ThumbnailProps {
   item: VaultItem;
@@ -18,17 +18,21 @@ interface ThumbnailProps {
  * Grid thumbnail. Photos use the small encrypted thumb (decrypts in
  * milliseconds); items still warming from the legacy backfill path may
  * decrypt the full file once. Documents/videos render icons only.
+ *
+ * The tile is sized from the first frame and shows a dimmed placeholder
+ * while the thumb decrypts, so the grid never flashes a spinner or shifts
+ * the layout once the image arrives.
  */
 export function Thumbnail({ item, size }: ThumbnailProps) {
   const theme = useTheme();
-  const [uri, setUri] = useState<string | null>(() =>
-    item.kind === 'photo' && hasCachedPlain(item) ? plainFileFor(item).uri : null,
-  );
+  const [uri, setUri] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
-    if (item.kind !== 'photo' || uri) return;
+    if (item.kind !== 'photo') return;
     let cancelled = false;
+    // No state reset here: the grid keys tiles by item id, so a different
+    // item is a different component with fresh state.
     loadThumb(getMasterKey(), item)
       .then((file) => {
         if (!cancelled) setUri(file.uri);
@@ -39,8 +43,7 @@ export function Thumbnail({ item, size }: ThumbnailProps) {
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [item.id, item.kind, uri]);
+  }, [item]);
 
   const duration = item.kind === 'video' ? formatDuration(item.durationMs) : null;
 
@@ -55,10 +58,13 @@ export function Thumbnail({ item, size }: ThumbnailProps) {
       {item.kind === 'photo' &&
         (uri ? (
           <Image source={{ uri }} style={styles.image} contentFit="cover" transition={120} />
-        ) : failed ? (
-          <Ionicons name="image-outline" size={22} color={theme.textSecondary} />
         ) : (
-          <ActivityIndicator size="small" color={theme.textSecondary} />
+          <Ionicons
+            name="image-outline"
+            size={22}
+            color={theme.textSecondary}
+            style={failed ? undefined : styles.placeholder}
+          />
         ))}
       {item.kind === 'video' && (
         <View style={styles.center}>
@@ -89,6 +95,9 @@ const styles = StyleSheet.create({
   image: {
     width: '100%',
     height: '100%',
+  },
+  placeholder: {
+    opacity: 0.3,
   },
   badge: {
     position: 'absolute',

@@ -1,7 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useEvent, useEventListener } from 'expo';
 import type { File } from 'expo-file-system';
-import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router, useLocalSearchParams } from 'expo-router';
 import { VideoView, useVideoPlayer } from 'expo-video';
@@ -22,6 +21,7 @@ import { ActionSheetModal, type SheetAction } from '@/components/vault/action-sh
 import { confirmDestructive } from '@/components/vault/confirm';
 import { formatBytes, formatDate, formatDuration } from '@/components/vault/format';
 import { NamePromptModal } from '@/components/vault/name-prompt-modal';
+import { ZoomableImage } from '@/components/vault/zoomable-image';
 import { Fonts, Palette, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { useVaultIndex } from '@/hooks/use-vault-index';
@@ -145,6 +145,12 @@ export default function ItemScreen() {
     setAttempt((value) => value + 1);
   }, []);
 
+  // Tapping the photo toggles the overlay chrome. Stable identity so the
+  // zoom gesture does not re-register on every render.
+  const toggleChrome = useCallback(() => {
+    setChromeShown((visible) => !visible);
+  }, []);
+
   const onShare = useCallback(
     async (file: File) => {
       if (!item) return;
@@ -232,21 +238,12 @@ export default function ItemScreen() {
     );
   } else if (item.kind === 'photo') {
     stage = (
-      <Pressable
-        onPress={() => setChromeShown((visible) => !visible)}
-        accessibilityRole="image"
-        accessibilityLabel={`${item.name}. Tap to hide or show the controls.`}
-        style={StyleSheet.absoluteFill}>
-        <View style={styles.centerFill}>
-          <ActivityIndicator color="rgba(255,255,255,0.3)" />
-        </View>
-        <Image
-          source={{ uri: decrypt.file.uri }}
-          style={StyleSheet.absoluteFill}
-          contentFit="contain"
-          transition={180}
-        />
-      </Pressable>
+      <ZoomableImage
+        key={item.id}
+        uri={decrypt.file.uri}
+        onTap={toggleChrome}
+        accessibilityLabel={`${item.name}. Tap to hide or show the controls, double tap to zoom.`}
+      />
     );
   } else if (item.kind === 'video') {
     stage = (

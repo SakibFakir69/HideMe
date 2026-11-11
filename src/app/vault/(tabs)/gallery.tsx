@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Alert, Dimensions, FlatList, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -16,7 +16,7 @@ import { Fonts, MaxContentWidth, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { useVaultIndex } from '@/hooks/use-vault-index';
 import { getMasterKey } from '@/lib/vault-session';
-import { moveItemsToBin, restoreItems, searchItems } from '@/lib/vault-store';
+import { moveItemsToBin, restoreItems, searchItems, type VaultItem } from '@/lib/vault-store';
 
 const NUM_COLUMNS = 3;
 const GRID_GAP = Spacing.two;
@@ -42,7 +42,9 @@ export default function GalleryScreen() {
     return Math.floor((usable - GRID_GAP * (NUM_COLUMNS - 1)) / NUM_COLUMNS);
   }, []);
 
-  const toggleSelect = (id: string) =>
+  // Stable callbacks: the grid re-renders on every index mutation, and new
+  // function identities would defeat the memoized ItemTile.
+  const toggleSelect = useCallback((id: string) => {
     setSelected((prev) => {
       if (!prev) return new Set([id]);
       const next = new Set(prev);
@@ -50,6 +52,19 @@ export default function GalleryScreen() {
       else next.add(id);
       return next.size > 0 ? next : null;
     });
+  }, []);
+
+  const handlePress = useCallback(
+    (item: VaultItem) => {
+      if (selectMode) toggleSelect(item.id);
+      else router.push({ pathname: '/vault/item/[id]', params: { id: item.id } });
+    },
+    [selectMode, toggleSelect],
+  );
+
+  const handleLongPress = useCallback((item: VaultItem) => {
+    setSelected(new Set([item.id]));
+  }, []);
 
   const onDeleteSelected = async () => {
     if (!selected || selected.size === 0) return;
@@ -140,11 +155,8 @@ export default function GalleryScreen() {
               size={columns}
               selectMode={selectMode}
               selected={selected?.has(item.id) ?? false}
-              onPress={() => {
-                if (selectMode) toggleSelect(item.id);
-                else router.push({ pathname: '/vault/item/[id]', params: { id: item.id } });
-              }}
-              onLongPress={() => setSelected(new Set([item.id]))}
+              onPress={handlePress}
+              onLongPress={handleLongPress}
             />
           )}
           initialNumToRender={12}

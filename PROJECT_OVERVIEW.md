@@ -42,9 +42,18 @@ UI/UX canon lives in [`DESIGN.md`](./DESIGN.md).
 | Lock | `expo-local-authentication`, `expo-screen-capture` |
 | Ads | `react-native-google-mobile-ads` (AdMob banner / interstitial / rewarded) |
 | UI | `@expo/vector-icons`, `expo-linear-gradient`, `react-native-reanimated` |
+| Gestures | `react-native-gesture-handler` (v3 hook API) + `react-native-worklets` |
+| Native | `modules/app-icon` (launcher aliases), `modules/vault-crypto` (PBKDF2) |
 
 No `ios/` directory is committed; Android native project is generated (CNG). Always add
 packages with `npx expo install`, not `npm install`.
+
+The two local Expo modules live in `modules/` and are autolinked:
+
+| Module | Platforms | Purpose |
+|---|---|---|
+| `modules/app-icon` | Android | Five `activity-alias` launcher disguises, hide mode, `*#*#48263#*#*` restore receiver |
+| `modules/vault-crypto` | Android, iOS | Native PBKDF2-HMAC-SHA256 (Conscrypt / CommonCrypto); salt and key travel as lowercase hex |
 
 ---
 
@@ -86,8 +95,9 @@ src/app/
 | Layer | Files | Responsibility |
 |---|---|---|
 | Crypto primitives | `lib/crypto/envelope.ts` | Pure, node-testable envelope: AES-256-CTR + HMAC-SHA256, per-file key wrapped with AES-256-GCM (AAD-bound to file id) |
+| Key derivation | `lib/crypto/pbkdf2.ts` | Pure PBKDF2-HMAC-SHA256 wrapper: platform provider first, JS fallback second, identical bytes |
 | File streaming | `lib/crypto/file-crypto.ts` | Chunked encrypt/decrypt with progress; encrypt-then-MAC; integrity verified **before** plaintext is released |
-| Secret / KEK | `lib/vault-secret.ts` | PBKDF2-SHA256 (**210k rounds**) → 64-byte DK: `[0:32]` verifier, `[32:64]` KEK that unwraps the master key. Android 8+ derives via `modules/vault-crypto` (platform PBKDF2, ~1 s); JS fallback elsewhere produces identical bytes |
+| Secret / KEK | `lib/vault-secret.ts` | PBKDF2-SHA256 (**210k rounds**) → 64-byte DK: `[0:32]` verifier, `[32:64]` KEK that unwraps the master key. Android 8+ and iOS derive natively (`modules/vault-crypto`: platform PBKDF2, ~1 s); the JS fallback elsewhere produces identical bytes |
 | Session | `lib/vault-session.ts` | In-memory master key only; `lock()` zeroizes and runs cleanups; external store for React |
 | Storage | `lib/vault-store.ts` | Encrypted index + blobs, import pipeline, thumbnail cache, bin helpers |
 | Lockout | `lib/vault-lockout*.ts` | 3 free attempts, then 15s → 30s → … capped at 15 min; persisted across restarts |
@@ -98,6 +108,15 @@ src/app/
 | Calculator | `lib/calc-engine.ts` | Safe expression evaluator for the disguise (no `eval`) |
 | Ads | Lazy AdMob init, unlock interstitial cap (1 / 24h, persisted), import interstitial every 2 imports (persisted counter), rewarded reward grant |
 | Design tokens | `constants/theme.ts`, `hooks/use-theme.ts`, `lib/theme-pref.ts` | Palette + light/dark/system preference |
+
+### Key derivation
+
+`lib/crypto/pbkdf2.ts` is the single entry point for PBKDF2-HMAC-SHA256. It
+prefers the platform provider and falls back to `@noble/hashes`; both paths
+produce identical bytes, which the known-answer vectors in
+`lib/crypto/pbkdf2.test.ts` pin to the published NIST/RFC 7914 values. The
+native modules exchange the salt and the derived key as lowercase hex, so
+Android and iOS share one wire format.
 
 ### Storage layout (app-private sandbox)
 
@@ -141,14 +160,14 @@ so the stored record alone cannot be brute-forced cheaply and never contains the
 |---|---|
 | Disguise gate | Real calculator (expression + result, shrink-to-fit), anonymous dark UI |
 | Setup | 6–12 digit code, confirm step, unrecoverable-code warning |
-| PIN unlock | PBKDF2 210k → AES-256-GCM master-key wrap, constant-time verify |
+| PIN unlock | PBKDF2 210k → AES-256-GCM master-key wrap, constant-time verify; native derivation on Android 8+ and iOS |
 | Biometric unlock | Face ID / fingerprint; master key in Keychain/Keystore; enabled from Settings (with PIN confirmation)
 | Lockout | 3 free attempts → exponential backoff (15s…15min), survives restart |
 | Auto-lock | Immediately / 30s / 1min / 5min, configurable; rewarded-ad pause sheet (§5.7) grants 1h, free for premium |
 | Privacy | Screenshot blocking + app-switcher shield while unlocked; restored for the gate |
 | Import | Photos/videos (gallery or camera), documents, other files; per-file progress, cancelable |
 | Organization | Folders, rename, move, search (debounced), storage stats |
-| Viewers | Immersive black stage with tap-to-hide chrome; photos fit-to-screen, video (`expo-video`, no autoplay, native controls + fullscreen), documents open in the system preview sheet from a card; Share via the More sheet (`expo-sharing`) |
+| Viewers | Immersive black stage with tap-to-hide chrome; photos fit-to-screen with pinch-to-zoom, double-tap zoom and drag-to-pan (clamped to the viewport), video (`expo-video`, no autoplay, native controls + fullscreen), documents open in the system preview sheet from a card; Share via the More sheet (`expo-sharing`) |
 | Deletion | Move to bin, restore, permanent delete, erase-all; 30-day auto-expiry |
 | Gallery | Responsive grid, duration badges, All/Photos/Videos chips, multi-select + bulk actions |
 | Settings | Change code, biometric switch, auto-lock timer, theme (system/light/dark), app icon, reminders, storage, erase |
@@ -158,7 +177,7 @@ so the stored record alone cannot be brute-forced cheaply and never contains the
 | Reminders | Daily 09:00 local notification while the bin has items; generic lock-screen text; permission handled in Settings |
 | Launcher disguise | Calculator / Notes / Photos / Weather / Music aliases; hide-all mode; dial-code restore |
 | Ads | Banner (hidden in select mode), interstitial after unlock (max 1/24h) and after every 2nd import, rewarded auto-lock pause; all skipped for premium |
-| Quality | Pure-core unit tests (envelope, lockout, auto-lock, bin, ad cap) |
+| Quality | Pure-core unit tests (envelope, PBKDF2 known-answer vectors, lockout, auto-lock, bin, ad cap) |
 
 ### Partial
 
@@ -181,16 +200,22 @@ so the stored record alone cannot be brute-forced cheaply and never contains the
 
 ### P0 — correctness & performance (from `roadmap.md`)
 
-1. **PIN setup flow** — make entering/confirming the code fast and simple (avoid re-derivation jank).
-2. ~~**Faster crypto**~~ — solved by the local `vault-crypto` Expo module: Android 8+ uses the
-   platform PBKDF2 (native, ~1 s); iOS/web keep the JS fallback with identical output.
-3. **Import/grid lag** — commit `9cac511` fixed late decode/duplicate tiles; still tune concurrency
-   and thumbnail cache (unbounded parallel pure-JS decrypt was the original cause).
-4. **"Instant show"** — eliminate layout flash on first paint of grids/viewers.
+1. ~~**PIN setup flow**~~ — done: native PBKDF2 on Android 8+ **and iOS** (~1 s), both
+   derivations run concurrently when the code changes, and the setup screen keeps the
+   first code when the confirmation does not match.
+2. ~~**Faster crypto**~~ — solved by the local `vault-crypto` Expo module: Android 8+
+   uses the platform PBKDF2, iOS uses CommonCrypto; web keeps the JS fallback. All
+   three produce identical bytes (pinned by known-answer tests).
+3. ~~**Import/grid lag**~~ — done: grid tiles are memoized, thumbnails get their own
+   decryption budget, and import overlaps thumbnail building with the next file.
+4. ~~**"Instant show"**~~ — done: sized placeholder instead of a spinner, no filesystem
+   stat during render, no layout jump when the thumbnail or the photo arrives.
 5. **Type/object sizing** — audit prop types, image aspect ratios, and tile dimensions.
-6. **Viewer polish** — the player/viewer now has a black stage, tap-to-hide chrome, no autoplay,
-   fullscreen and a real document card; still to add: swipe pager, pinch zoom, document scroll.
-7. **Type/import cleanup** — remaining `any`/loose imports.
+   The grid is still a fixed square crop (`contentFit="cover"`); DESIGN.md asks for a
+   responsive masonry grid that keeps the real ratio.
+6. **Viewer polish** — pinch zoom, double-tap zoom and drag-to-pan ship; still to add:
+   swipe pager and document scroll.
+7. ~~**Type/import cleanup**~~ — no `any` left in `src/`; keep it that way.
 
 ### P1 — design-complete screens
 
@@ -198,7 +223,7 @@ so the stored record alone cannot be brute-forced cheaply and never contains the
 2. Bulk share/export in select mode (single-file share from the viewer now ships via `expo-sharing`).
 3. Setup-secret visual pass (onboarding slides are done: swipeable, gradient badges, dot pager).
 4. Premium receipt verification against the store (backend optional; the silent launch sync covers reinstall/device changes).
-5. Viewer swipe pager + pinch zoom.
+5. Viewer swipe pager.
 
 ### P2 — hardening & ops
 
@@ -241,16 +266,25 @@ Ads and biometrics require a **development build** — Expo Go will not run the 
 
 ---
 
-## 9. Repository state (as of 2026-10-27)
+## 9. Repository state (as of 2026-11-11)
 
-Last commit `first build done`. A large uncommitted wave sits on top:
+The tree is clean. Recent commits:
 
-- **New:** `onboarding.tsx`, `vault/(tabs)/_layout.tsx`, `files.tsx`, `gallery.tsx`,
-  `vault/import.tsx`, `components/ui/*`, `components/vault/ad-banner.tsx`,
-  `lib/ads.ts`, `lib/ads-cap-core.ts`, `constants/ads.ts`, `hooks/use-debounced-value.ts`,
-  `DESIGN.md`, this file.
-- **Modified:** tab-bar refactor (`vault/index.tsx` + `settings.tsx` moved into `(tabs)`),
-  calculator gate, theme tokens, import hook, auto-lock, secret handling, store.
+- `1b1e3fc` — premium, launcher disguise, native PBKDF2 (Android), reminders, sharing.
+- `205d0e2` — redesign wave.
+- `5834a34` — first build done.
 
-Recommended next step: commit the tab-bar + onboarding + ads wave before starting the
-P0 performance work, so regressions remain bisectable.
+The latest wave (P0 performance pass) added:
+
+- **New:** `modules/vault-crypto/ios/` (CommonCrypto PBKDF2), `lib/crypto/pbkdf2.ts`
+  (+ known-answer tests), `components/vault/zoomable-image.tsx`.
+- **Modified:** `vault-secret.ts` (single derivation entry point, concurrent code change),
+  `setup-secret.tsx` (keep the first code on mismatch, digit counter, spinner),
+  `item-tile.tsx` (memoized with a field comparator), `thumbnail.tsx` (no render-time
+  filesystem stat, placeholder instead of spinner), `vault-store.ts` (separate thumbnail
+  decryption budget, pipelined import), the three grid screens (stable callbacks),
+  `_layout.tsx` (`GestureHandlerRootView`).
+
+Verified on this wave: `tsc --noEmit`, `expo lint`, 49/49 unit tests,
+`expo export --platform android` (2141 modules) and
+`gradlew :vault-crypto:compileDebugKotlin` (BUILD SUCCESSFUL).

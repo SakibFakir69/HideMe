@@ -1,5 +1,3 @@
-import { pbkdf2Async } from '@noble/hashes/pbkdf2.js';
-import { sha256 } from '@noble/hashes/sha2.js';
 import * as Crypto from 'expo-crypto';
 import * as SecureStore from 'expo-secure-store';
 
@@ -12,6 +10,7 @@ import {
   bytesToBase64,
   utf8,
 } from './crypto/envelope';
+import { deriveKey } from './crypto/pbkdf2';
 
 const STORAGE_KEY = 'vault.secret.v1';
 const BIOMETRIC_KEY = 'vault.mk.biometric';
@@ -78,34 +77,16 @@ function isValidCode(code: string): boolean {
 const rand = (length: number): Uint8Array => Crypto.getRandomBytes(length);
 
 async function derive(code: string, salt: Uint8Array, iterations: number): Promise<Uint8Array> {
-  // Android 8+ derives through the platform PBKDF2 (native code) — the same
-  // algorithm and iteration count, roughly two orders of magnitude faster
-  // than Hermes. Everything else falls back to the JS implementation.
-  const nativeStarted = Date.now();
-  const nativeKey = await nativePbkdf2(code, salt, iterations, DK_BYTES);
-  if (nativeKey) {
-    if (__DEV__) {
-      console.log(
-        `[vault] native PBKDF2 ${iterations} iters in ${Date.now() - nativeStarted} ms`,
-      );
-    }
-    return nativeKey;
-  }
-
-  if (__DEV__) console.log('[vault] native PBKDF2 unavailable — using JS fallback');
-  const jsStarted = Date.now();
-  const jsKey = await pbkdf2Async(sha256, code, salt, {
-    c: iterations,
-    dkLen: DK_BYTES,
-    // Yield to RN's event loop only every ~100ms of work: smaller ticks made
-    // thousands of setTimeout hops whose Android timer latency dominated
-    // total time (the "minutes to secure a PIN" bug).
-    asyncTick: 100,
-  });
+  // The platform provider (Android's Conscrypt, iOS' CommonCrypto) runs the
+  // same PBKDF2-HMAC-SHA256 natively in a fraction of the time the pure-JS
+  // implementation needs on Hermes, and produces identical bytes so records
+  // stay portable. Everything else falls back to the JS implementation.
+  const started = Date.now();
+  const { key, source } = await deriveKey(code, salt, iterations, DK_BYTES, nativePbkdf2);
   if (__DEV__) {
-    console.log(`[vault] JS PBKDF2 ${iterations} iters in ${Date.now() - jsStarted} ms`);
+    console.log(`[vault] PBKDF2 ${iterations} iters via ${source} in ${Date.now() - started} ms`);
   }
-  return jsKey;
+  return key;
 }
 
 function splitDerived(dk: Uint8Array): { hash: Uint8Array; kek: Uint8Array } {
@@ -228,16 +209,24 @@ export async function changeSecretCode(oldCode: string, newCode: string): Promis
   if (oldCode.length !== record.len || !DIGITS_RE.test(oldCode)) {
     throw new Error('Current code is incorrect.');
   }
-  const old = splitDerived(await derive(oldCode, fromHex(record.salt), record.c));
+  const salt = Crypto.getRandomBytes(SALT_BYTES);
+  // Both derivations are CPU-bound and independent, so they run concurrently:
+  // the platform provider overlaps them and the wall-clock cost of a code
+  // change drops from two serial PBKDF2 passes to roughly one.
+  const [oldDerived, nextDerived] = await Promise.all([
+    derive(oldCode, fromHex(record.salt), record.c),
+    derive(newCode, salt, ITERATIONS),
+  ]);
+  const old = splitDerived(oldDerived);
   if (!constantTimeEqual(old.hash, fromHex(record.hash))) {
     old.kek.fill(0);
+    nextDerived.fill(0);
     throw new Error('Current code is incorrect.');
   }
   const masterKey = unwrapMasterKey(record.mk, old.kek);
   old.kek.fill(0);
 
-  const salt = Crypto.getRandomBytes(SALT_BYTES);
-  const next = splitDerived(await derive(newCode, salt, ITERATIONS));
+  const next = splitDerived(nextDerived);
   const wrapped = wrapMasterKey(next.kek, masterKey);
   await persistRecord({
     ...record,

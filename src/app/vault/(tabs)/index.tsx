@@ -47,7 +47,7 @@ import {
   restoreItems,
   searchItems,
 } from '@/lib/vault-store';
-import type { VaultFolder } from '@/lib/vault-store';
+import type { VaultFolder, VaultItem } from '@/lib/vault-store';
 
 const NUM_COLUMNS = 3;
 const GRID_GAP = Spacing.two;
@@ -72,7 +72,9 @@ export default function VaultHomeScreen() {
   // visible in the gap, so the grid never flashes empty mid-word.
   const effectiveQuery = useDebouncedValue(query, 250);
 
-  const toggleSelect = (id: string) =>
+  // Stable callbacks: the grid re-renders on every index mutation, and new
+  // function identities would defeat the memoized ItemTile.
+  const toggleSelect = useCallback((id: string) => {
     setSelected((prev) => {
       if (!prev) return new Set([id]);
       const next = new Set(prev);
@@ -80,7 +82,21 @@ export default function VaultHomeScreen() {
       else next.add(id);
       return next.size > 0 ? next : null;
     });
-  const startSelect = (id: string) => setSelected(new Set([id]));
+  }, []);
+  const startSelect = useCallback((id: string) => setSelected(new Set([id])), []);
+
+  const handleItemPress = useCallback(
+    (item: VaultItem) => {
+      if (selectMode) toggleSelect(item.id);
+      else router.push({ pathname: '/vault/item/[id]', params: { id: item.id } });
+    },
+    [selectMode, toggleSelect],
+  );
+
+  const handleItemLongPress = useCallback(
+    (item: VaultItem) => startSelect(item.id),
+    [startSelect],
+  );
 
   const activeItems = useMemo(
     () => (index ? searchItems(index, '') : []),
@@ -375,11 +391,8 @@ export default function VaultHomeScreen() {
               size={columns}
               selectMode={selectMode}
               selected={selected?.has(item.id) ?? false}
-              onPress={() => {
-                if (selectMode) toggleSelect(item.id);
-                else router.push({ pathname: '/vault/item/[id]', params: { id: item.id } });
-              }}
-              onLongPress={() => startSelect(item.id)}
+              onPress={handleItemPress}
+              onLongPress={handleItemLongPress}
             />
           )}
           initialNumToRender={9}

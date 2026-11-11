@@ -4,15 +4,38 @@ declare class VaultCryptoModule extends NativeModule<{}> {
   isAvailable(): boolean;
   pbkdf2(
     password: string,
-    salt: Uint8Array,
+    saltHex: string,
     iterations: number,
     keyLength: number,
-  ): Promise<Uint8Array>;
+  ): Promise<string>;
 }
 
 const VaultCrypto = requireOptionalNativeModule<VaultCryptoModule>('VaultCrypto');
 
-/** True when the platform provides PBKDF2-HMAC-SHA256 (Android 8.0+). */
+const HEX_ALPHABET = '0123456789abcdef';
+
+function bytesToHex(bytes: Uint8Array): string {
+  let out = '';
+  for (let i = 0; i < bytes.length; i++) {
+    const value = bytes[i];
+    out += HEX_ALPHABET[value >> 4] + HEX_ALPHABET[value & 0x0f];
+  }
+  return out;
+}
+
+function hexToBytes(hex: string): Uint8Array | null {
+  if (hex.length % 2 !== 0) return null;
+  const out = new Uint8Array(hex.length / 2);
+  for (let i = 0; i < out.length; i++) {
+    const hi = HEX_ALPHABET.indexOf(hex[i * 2]);
+    const lo = HEX_ALPHABET.indexOf(hex[i * 2 + 1]);
+    if (hi < 0 || lo < 0) return null;
+    out[i] = (hi << 4) | lo;
+  }
+  return out;
+}
+
+/** True when the platform provides PBKDF2-HMAC-SHA256 (Android 8+, iOS). */
 export function isNativePbkdf2Available(): boolean {
   try {
     return VaultCrypto?.isAvailable() === true;
@@ -34,13 +57,14 @@ export async function nativePbkdf2(
 ): Promise<Uint8Array | null> {
   if (!VaultCrypto) return null;
   try {
-    const out: unknown = await VaultCrypto.pbkdf2(password, salt, iterations, keyLength);
-    const bytes =
-      out instanceof Uint8Array
-        ? out
-        : out instanceof ArrayBuffer
-          ? new Uint8Array(out)
-          : null;
+    const out: unknown = await VaultCrypto.pbkdf2(
+      password,
+      bytesToHex(salt),
+      iterations,
+      keyLength,
+    );
+    if (typeof out !== 'string') return null;
+    const bytes = hexToBytes(out);
     if (!bytes || bytes.length !== keyLength) return null;
     return bytes;
   } catch {

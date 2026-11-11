@@ -1,6 +1,6 @@
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { CalcKey } from '@/components/calc-key';
@@ -73,18 +73,22 @@ export default function SetupSecretScreen() {
     setForm((f) => {
       if (f.phase !== 'entry' && f.phase !== 'confirm') return f;
       if (f.entry.length < MIN_CODE_LENGTH) {
-        return { ...f, message: `Use at least ${MIN_CODE_LENGTH} digits.` };
+        return {
+          ...f,
+          message: `Use at least ${MIN_CODE_LENGTH} digits — ${MIN_CODE_LENGTH - f.entry.length} to go.`,
+        };
       }
       if (f.phase === 'entry') {
         return { ...f, first: f.entry, entry: '', message: '', phase: 'confirm' };
       }
       if (f.entry !== f.first) {
+        // The first code is still valid: only the confirmation has to be
+        // retyped, so the user never re-enters 6–12 digits from scratch.
         return {
           ...f,
-          first: '',
           entry: '',
-          message: 'Codes did not match — start over.',
-          phase: 'entry',
+          message: 'Codes did not match — enter it once more.',
+          phase: 'confirm',
         };
       }
       return { ...f, phase: 'working', message: '' };
@@ -137,6 +141,19 @@ export default function SetupSecretScreen() {
   const entry = form.entry;
   const message = form.message;
   const prompt = phase === 'confirm' ? 'Re-enter to confirm' : 'Choose your secret code';
+  const emptySlots = Math.max(0, MIN_CODE_LENGTH - entry.length);
+  const actionLabel = phase === 'confirm' ? 'Confirm' : 'Set';
+  const subtitle =
+    phase === 'already-set'
+      ? 'A secret code is already configured.'
+      : phase === 'working'
+        ? 'Securing your code…'
+        : `${prompt} (${MIN_CODE_LENGTH}-${MAX_CODE_LENGTH} digits)`;
+  const hint =
+    message ||
+    (phase === 'entry' || phase === 'confirm'
+      ? `${entry.length} of at least ${MIN_CODE_LENGTH} digits`
+      : '');
 
   return (
     <ThemedView style={styles.container}>
@@ -145,16 +162,12 @@ export default function SetupSecretScreen() {
           <ThemedText type="subtitle" style={styles.title}>
             Vault setup
           </ThemedText>
-          <ThemedText
-            type="small"
-            themeColor="textSecondary"
-            style={styles.subtitle}>
-            {phase === 'already-set'
-              ? 'A secret code is already configured.'
-              : phase === 'working'
-                ? 'Securing your code…'
-                : `${prompt} (${MIN_CODE_LENGTH}-${MAX_CODE_LENGTH} digits)`}
-          </ThemedText>
+          <View style={styles.subtitleRow}>
+            {phase === 'working' && <ActivityIndicator size="small" color={theme.tint} />}
+            <ThemedText type="small" themeColor="textSecondary" style={styles.subtitle}>
+              {subtitle}
+            </ThemedText>
+          </View>
 
           <View style={[styles.codeBox, { borderBottomColor: theme.backgroundSelected }]}>
             <Text
@@ -165,12 +178,15 @@ export default function SetupSecretScreen() {
                 ? '••••••'
                 : entry.length > 0
                   ? '•'.repeat(entry.length)
-                  : ' '}
+                  : ''}
+              {phase !== 'already-set' && emptySlots > 0 ? (
+                <Text style={{ color: theme.textSecondary }}>{'•'.repeat(emptySlots)}</Text>
+              ) : null}
             </Text>
           </View>
 
           <ThemedText type="small" themeColor="textSecondary" style={styles.message}>
-            {message}
+            {hint}
           </ThemedText>
 
           {phase === 'already-set' ? (
@@ -215,7 +231,7 @@ export default function SetupSecretScreen() {
                 </View>
               ))}
               <View style={[styles.row, { backgroundColor: theme.background }]}>
-                <CalcKey label="Set" variant="accent" span={4} onPress={commit} />
+                <CalcKey label={actionLabel} variant="accent" span={4} onPress={commit} />
               </View>
             </View>
           )}
@@ -248,6 +264,12 @@ const styles = StyleSheet.create({
   },
   subtitle: {
     textAlign: 'center',
+  },
+  subtitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.one,
   },
   codeBox: {
     alignItems: 'center',

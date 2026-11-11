@@ -79,27 +79,33 @@ const inflightThumbs = new Map<string, Promise<File>>();
 
 // Grids mount a decrypt per photo at once — unbounded parallel pure-JS crypto
 // saturates the JS thread (janky UI, frozen spinners). Cap concurrency.
-const MAX_PARALLEL_DECRYPTS = 2;
-let activeDecrypts = 0;
-const decryptWaiters: (() => void)[] = [];
-
-function acquireDecryptSlot(): Promise<void> {
-  if (activeDecrypts < MAX_PARALLEL_DECRYPTS) {
-    activeDecrypts++;
-    return Promise.resolve();
-  }
-  return new Promise((resolve) => {
-    decryptWaiters.push(() => {
-      activeDecrypts++;
-      resolve();
-    });
-  });
+function createLimiter(limit: number) {
+  let active = 0;
+  const waiters: (() => void)[] = [];
+  return {
+    async acquire(): Promise<void> {
+      if (active < limit) {
+        active++;
+        return;
+      }
+      await new Promise<void>((resolve) => {
+        waiters.push(() => {
+          active++;
+          resolve();
+        });
+      });
+    },
+    release(): void {
+      active--;
+      waiters.shift()?.();
+    },
+  };
 }
 
-function releaseDecryptSlot(): void {
-  activeDecrypts--;
-  decryptWaiters.shift()?.();
-}
+/** Full-file decrypts move megabytes through AES-CTR + HMAC in JS: keep them few. */
+const decryptLimiter = createLimiter(2);
+/** Thumbnails are ~10–20 KB, so many of them can overlap without stalling the UI. */
+const thumbLimiter = createLimiter(4);
 
 function emptyIndex(): VaultIndex {
   return { v: 2, folders: [], items: [] };
@@ -272,6 +278,11 @@ export async function importAssets(opts: ImportOptions): Promise<VaultItem[]> {
   ensureDir(filesDir());
 
   const added: VaultItem[] = [];
+  // Thumbnail building runs mostly in native code (decode → resize → JPEG),
+  // so it overlaps with the JS-side encryption of the following file instead
+  // of running strictly after it. Awaiting only the last one keeps the batch
+  // from serializing into "encrypt, thumbnail, encrypt, thumbnail…".
+  const thumbTasks: Promise<void>[] = [];
   for (let i = 0; i < assets.length; i++) {
     const asset = assets[i];
     const id = Crypto.randomUUID();
@@ -318,11 +329,11 @@ export async function importAssets(opts: ImportOptions): Promise<VaultItem[]> {
     if (item.kind === 'photo') {
       // Best-effort: a missing thumb only means the grid falls back to the
       // slower full-decrypt path once (and builds the thumb then).
-      try {
-        await buildThumbForImport(masterKey, id, asset.uri);
-      } catch {
-        // ignore — import itself already succeeded
-      }
+      thumbTasks.push(
+        buildThumbForImport(masterKey, id, asset.uri).catch(() => {
+          // ignore — import itself already succeeded
+        }),
+      );
     }
     onProgress?.({
       fileIndex: i + 1,
@@ -332,6 +343,7 @@ export async function importAssets(opts: ImportOptions): Promise<VaultItem[]> {
       fraction: (i + 1) / assets.length,
     });
   }
+  await Promise.all(thumbTasks);
   await saveIndex(masterKey);
   return added;
 }
@@ -546,7 +558,7 @@ export function decryptToCache(
   if (existing) return existing;
 
   const task = (async () => {
-    await acquireDecryptSlot();
+    await decryptLimiter.acquire();
     try {
       ensureDir(tmpDir());
       const source = itemFile(item.id);
@@ -555,7 +567,7 @@ export function decryptToCache(
       await decryptFile({ source, dest, masterKey, onProgress });
       return dest;
     } finally {
-      releaseDecryptSlot();
+      decryptLimiter.release();
     }
   })();
 
@@ -681,14 +693,14 @@ export function loadThumb(masterKey: Uint8Array, item: VaultItem): Promise<File>
 
     const cipher = thumbCipherFile(item.id);
     if (cipher.exists) {
-      await acquireDecryptSlot();
+      await thumbLimiter.acquire();
       try {
         const envelope = await cipher.bytes();
         const opened = decryptBytes(envelope, masterKey);
         await writeBytesToNewFile(plain, opened.plaintext);
         return plain;
       } finally {
-        releaseDecryptSlot();
+        thumbLimiter.release();
       }
     }
 

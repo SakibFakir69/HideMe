@@ -6,6 +6,8 @@ import { useFonts } from 'expo-font';
 import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
+import { StyleSheet } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { initAds } from '@/lib/ads';
@@ -48,14 +50,22 @@ export default function RootLayout() {
   if (!fontsLoaded && !fontError) return null;
 
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <Stack screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="calculator-disguise" />
-        <Stack.Screen name="unlock-success" />
-        <Stack.Screen name="onboarding" />
-        <Stack.Screen name="setup-secret" />
-        <Stack.Screen name="vault" />
-      </Stack>
-    </ThemeProvider>
+    <GestureHandlerRootView style={styles.root}>
+      <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+        <Stack screenOptions={{ headerShown: false }}>
+          <Stack.Screen name="calculator-disguise" />
+          <Stack.Screen name="unlock-success" />
+          <Stack.Screen name="onboarding" />
+          <Stack.Screen name="setup-secret" />
+          <Stack.Screen name="vault" />
+        </Stack>
+      </ThemeProvider>
+    </GestureHandlerRootView>
   );
 }
+
+const styles = StyleSheet.create({
+  root: {
+    flex: 1,
+  },
+});

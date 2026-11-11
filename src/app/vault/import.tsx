@@ -38,19 +38,19 @@ export default function ImportScreen() {
               onPress={() => void importAssets('media', null)}
             />
             <ListRow
-              icon="document-text"
-              iconColor="#10B981"
-              title="Documents"
-              subtitle="PDF, TXT, DOCX, etc."
-              divider
-              disabled={busy}
-              onPress={() => void importAssets('document', null)}
-            />
-            <ListRow
               icon="musical-notes"
               iconColor="#EC4899"
-              title="Audio & other files"
-              subtitle="MP3, WAV, ZIP, APK, etc."
+              title="Audio"
+              subtitle="MP3, WAV, M4A, etc."
+              divider
+              disabled={busy}
+              onPress={() => void importAssets('audio', null)}
+            />
+            <ListRow
+              icon="document-text"
+              iconColor="#10B981"
+              title="Documents & other files"
+              subtitle="PDF, TXT, ZIP, APK, etc."
               disabled={busy}
               onPress={() => void importAssets('document', null)}
             />

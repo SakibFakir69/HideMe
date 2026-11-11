@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { FlatList, Pressable, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -13,6 +13,7 @@ import { Fonts, MaxContentWidth, Radius, Spacing } from '@/constants/theme';
 import { useDebouncedValue } from '@/hooks/use-debounced-value';
 import { useTheme } from '@/hooks/use-theme';
 import { useVaultIndex } from '@/hooks/use-vault-index';
+import { setBrowseList } from '@/lib/vault-browse';
 import { searchItems, type VaultItem } from '@/lib/vault-store';
 
 export default function FilesScreen() {
@@ -23,7 +24,10 @@ export default function FilesScreen() {
 
   const documents = useMemo(() => {
     if (!index) return [];
-    return searchItems(index, effectiveQuery.trim()).filter((it) => it.kind === 'document');
+    // Everything that is not a photo or a video: documents and audio files.
+    return searchItems(index, effectiveQuery.trim()).filter(
+      (it) => it.kind === 'document' || it.kind === 'audio',
+    );
   }, [index, effectiveQuery]);
 
   const totalBytes = useMemo(
@@ -31,8 +35,15 @@ export default function FilesScreen() {
     [documents],
   );
 
-  const open = (item: VaultItem) =>
-    router.push({ pathname: '/vault/item/[id]', params: { id: item.id } });
+  const open = useCallback(
+    (item: VaultItem) => {
+      // Remember what the user was looking at so the viewer can page
+      // through the same set with a swipe.
+      setBrowseList(documents.map((entry) => entry.id));
+      router.push({ pathname: '/vault/item/[id]', params: { id: item.id } });
+    },
+    [documents],
+  );
 
   return (
     <ThemedView style={styles.container}>
@@ -48,9 +59,9 @@ export default function FilesScreen() {
               <ThemedText type="subtitle" style={styles.title}>
                 Files
               </ThemedText>
-              <SearchBar value={query} onChange={setQuery} placeholder="Search documents…" />
+              <SearchBar value={query} onChange={setQuery} placeholder="Search files…" />
               <ThemedText type="code" themeColor="textSecondary">
-                {`${documents.length} document${documents.length === 1 ? '' : 's'} · ${formatBytes(totalBytes)}`}
+                {`${documents.length} file${documents.length === 1 ? '' : 's'} · ${formatBytes(totalBytes)}`}
               </ThemedText>
             </View>
           }
@@ -61,7 +72,7 @@ export default function FilesScreen() {
                 <ThemedText type="small" themeColor="textSecondary" style={styles.emptyText}>
                   {effectiveQuery
                     ? 'Nothing matches your search.'
-                    : 'No documents yet.\nImport PDFs, text files, archives and more.'}
+                    : 'No files yet.\nImport PDFs, text files, archives, audio and more.'}
                 </ThemedText>
               </View>
             )
@@ -77,7 +88,11 @@ export default function FilesScreen() {
                 pressed && styles.pressed,
               ]}>
               <View style={styles.iconCircle}>
-                <Ionicons name="document-text" size={18} color="#FFFFFF" />
+                <Ionicons
+                  name={item.kind === 'audio' ? 'musical-notes' : 'document-text'}
+                  size={18}
+                  color="#FFFFFF"
+                />
               </View>
               <View style={styles.rowText}>
                 <ThemedText type="small" numberOfLines={1}>

@@ -24,6 +24,7 @@ export const CategoryColor = {
   photo: '#8B5CF6',
   video: '#3B82F6',
   document: '#10B981',
+  audio: '#EC4899',
   all: '#F59E0B',
 } as const;
 

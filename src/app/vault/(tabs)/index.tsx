@@ -53,7 +53,7 @@ import type { VaultFolder, VaultItem } from '@/lib/vault-store';
 const NUM_COLUMNS = 3;
 const FOLDER_ICON = '#3B82F6';
 
-type Category = 'all' | 'photo' | 'video' | 'document';
+type Category = 'all' | 'photo' | 'video' | 'document' | 'audio';
 
 export default function VaultHomeScreen() {
   const theme = useTheme();
@@ -96,7 +96,7 @@ export default function VaultHomeScreen() {
   );
 
   const counts = useMemo(() => {
-    const base = { all: activeItems.length, photo: 0, video: 0, document: 0 };
+    const base = { all: activeItems.length, photo: 0, video: 0, document: 0, audio: 0 };
     for (const item of activeItems) base[item.kind] += 1;
     return base;
   }, [activeItems]);
@@ -255,12 +255,12 @@ export default function VaultHomeScreen() {
             onPress={() => setCategory((c) => (c === 'document' ? 'all' : 'document'))}
           />
           <CategoryTile
-            icon="apps"
-            label="All files"
-            count={counts.all}
-            color={CategoryColor.all}
-            active={category === 'all'}
-            onPress={() => setCategory('all')}
+            icon="musical-notes"
+            label="Audio"
+            count={counts.audio}
+            color={CategoryColor.audio}
+            active={category === 'audio'}
+            onPress={() => setCategory((c) => (c === 'audio' ? 'all' : 'audio'))}
           />
         </View>
       </View>

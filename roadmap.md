@@ -33,7 +33,9 @@ Perf / polish punch list. Ordered by impact.
 - [ ] **2. fix all type object import issue** — no `any` left in `src/`; keep
       it that way when adding code.
 - [ ] Masonry grid that keeps the real photo aspect ratio.
-- [ ] Audio category + player (extend `ItemKind`, import, tile, viewer).
+- [x] Audio category + player — `audio` item kind (index schema v3 with a
+      migration), category tile, audio-only import row and a player in the
+      viewer.
 - [ ] Bulk share/export in select mode (no zip / multi-file share yet).
 - [ ] Setup-secret visual pass (onboarding slides are done).
 - [ ] Store-side purchase verification (entitlement is local for now).

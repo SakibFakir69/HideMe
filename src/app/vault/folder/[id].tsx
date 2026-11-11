@@ -174,6 +174,12 @@ export default function FolderScreen() {
           disabled={importing}
         />
         <ActionButton
+          icon="musical-notes-outline"
+          label="Audio"
+          onPress={() => void importAssets('audio', id)}
+          disabled={importing}
+        />
+        <ActionButton
           icon="document-outline"
           label="Document"
           onPress={() => void importAssets('document', id)}

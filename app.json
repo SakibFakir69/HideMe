@@ -69,7 +69,15 @@
       "expo-iap",
       "expo-notifications",
       "./plugins/with-launcher-disguise",
-      "expo-sharing"
+      "expo-sharing",
+      [
+        "expo-audio",
+        {
+          "microphonePermission": false,
+          "recordAudioAndroid": false,
+          "enableBackgroundPlayback": false
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

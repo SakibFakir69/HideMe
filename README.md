@@ -13,7 +13,8 @@ Type your secret code into the calculator keypad and the vault opens. Anyone els
 - Auto-lock after backgrounding (Immediately / 30s / 1min / 5min, configurable in settings)
 - Screenshot + app-switcher blocking while unlocked (restored for the locked calculator)
 - Failed-PIN lockout: 3 free attempts, then exponential backoff (15s → 15min cap), persisted across restarts
-- Folders, search, photo/video/document import with progress
+- Folders, search, photo/video/document/audio import with progress
+- Audio files get their own category and a player in the viewer (playback only — the app never asks for the microphone)
 - Photo, video and document viewers (tap-to-hide chrome, no video autoplay, fullscreen, single-file share)
 - Pinch-to-zoom, double-tap zoom and drag-to-pan in the photo viewer, plus a swipe pager through the files you were browsing
 - Change code, lock-now, storage stats, erase-all in settings

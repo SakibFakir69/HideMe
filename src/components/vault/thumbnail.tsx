@@ -79,6 +79,9 @@ export function Thumbnail({ item, size }: ThumbnailProps) {
       {item.kind === 'document' && (
         <Ionicons name="document-text-outline" size={24} color={theme.textSecondary} />
       )}
+      {item.kind === 'audio' && (
+        <Ionicons name="musical-notes-outline" size={24} color={theme.textSecondary} />
+      )}
     </View>
   );
 }

@@ -20,6 +20,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ActionSheetModal, type SheetAction } from '@/components/vault/action-sheet-modal';
+import { AudioPlayer } from '@/components/vault/audio-player';
 import { confirmDestructive } from '@/components/vault/confirm';
 import { formatBytes, formatDate, formatDuration } from '@/components/vault/format';
 import { NamePromptModal } from '@/components/vault/name-prompt-modal';
@@ -49,6 +50,7 @@ const KIND_LABEL: Record<VaultItem['kind'], string> = {
   photo: 'Photo',
   video: 'Video',
   document: 'Document',
+  audio: 'Audio',
 };
 
 /** "Photo · 2.4 MB · 0:42 · 1080×1920 · 12 Oct 2026" — one line of facts. */
@@ -440,6 +442,10 @@ function ViewerStage({
         isActive={isActive}
         onPlayingChange={onVideoPlayingChange}
       />
+    );
+  } else if (item.kind === 'audio') {
+    stage = (
+      <AudioPlayer key={item.id} uri={decrypt.file.uri} name={item.name} isActive={isActive} />
     );
   } else {
     stage = (

@@ -33,7 +33,11 @@ export default function GalleryScreen() {
 
   const items = useMemo(() => {
     if (!index) return [];
-    const media = searchItems(index, '').filter((it) => it.kind !== 'document');
+    // The gallery is photos and videos; audio and documents live in the
+    // vault home grid.
+    const media = searchItems(index, '').filter(
+      (it) => it.kind === 'photo' || it.kind === 'video',
+    );
     return filter === 'all' ? media : media.filter((it) => it.kind === filter);
   }, [index, filter]);
 

@@ -3,6 +3,13 @@ import { Directory, File, Paths } from 'expo-file-system';
 
 import { binEntries, expiredIds, isDeleted } from './vault-bin-core';
 import {
+  INDEX_VERSION,
+  isSupportedIndexVersion,
+  kindForMime,
+  normalizeKind,
+  type ItemKind,
+} from './vault-kinds';
+import {
   decryptBytes,
   encryptBytes,
   fromUtf8,
@@ -19,7 +26,8 @@ import { onLock } from './vault-session';
  *   <cache>/vault-tmp/...           decrypted plaintext (purged on lock)
  */
 
-export type ItemKind = 'photo' | 'video' | 'document';
+export type { ItemKind };
+export { INDEX_VERSION, kindForMime };
 
 export interface VaultFolder {
   id: string;
@@ -44,7 +52,7 @@ export interface VaultItem {
 }
 
 export interface VaultIndex {
-  v: 2;
+  v: 3;
   folders: VaultFolder[];
   items: VaultItem[];
 }
@@ -108,7 +116,7 @@ const decryptLimiter = createLimiter(2);
 const thumbLimiter = createLimiter(4);
 
 function emptyIndex(): VaultIndex {
-  return { v: 2, folders: [], items: [] };
+  return { v: INDEX_VERSION, folders: [], items: [] };
 }
 
 function rootDir(): Directory {
@@ -143,10 +151,13 @@ export function itemFile(itemId: string): File {
   return new File(filesDir(), `${itemId}.hmd`);
 }
 
-export function kindForMime(mime: string): ItemKind {
-  if (mime.startsWith('image/')) return 'photo';
-  if (mime.startsWith('video/')) return 'video';
-  return 'document';
+/**
+ * v2 had no `audio` kind, so audio files were stored as documents. Re-derive
+ * the kind from the mime so an existing vault categorizes them correctly.
+ */
+function normalizeItem(item: VaultItem): VaultItem {
+  const kind = normalizeKind(item.kind, item.mime);
+  return kind === item.kind ? item : { ...item, kind };
 }
 
 function extFor(name: string, mime: string): string {
@@ -178,10 +189,18 @@ export async function loadIndex(masterKey: Uint8Array): Promise<VaultIndex> {
   } catch {
     throw new Error('Vault index is corrupted.');
   }
-  if (parsed.v !== 2 || !Array.isArray(parsed.folders) || !Array.isArray(parsed.items)) {
+  if (
+    !isSupportedIndexVersion(parsed.v) ||
+    !Array.isArray(parsed.folders) ||
+    !Array.isArray(parsed.items)
+  ) {
     throw new Error('Vault index is corrupted.');
   }
-  cachedIndex = parsed;
+  cachedIndex = {
+    v: INDEX_VERSION,
+    folders: parsed.folders,
+    items: parsed.items.map(normalizeItem),
+  };
   return cachedIndex;
 }
 

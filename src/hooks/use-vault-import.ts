@@ -7,7 +7,7 @@ import { errorMessage, importAssets, type ImportProgress, type PickedAsset } fro
 import { getMasterKey } from '@/lib/vault-session';
 import { maybeShowImportInterstitial } from '@/lib/ads';
 
-export type ImportKind = 'media' | 'document';
+export type ImportKind = 'media' | 'audio' | 'document';
 
 export function useVaultImport(onImported?: () => Promise<void>) {
   const [progress, setProgress] = useState<ImportProgress | null>(null);
@@ -91,6 +91,20 @@ async function pickAssets(kind: ImportKind): Promise<PickedAsset[] | null> {
         durationMs: asset.duration ?? undefined,
       };
     });
+  }
+
+  if (kind === 'audio') {
+    const result = await DocumentPicker.getDocumentAsync({
+      copyToCacheDirectory: true,
+      multiple: true,
+      type: 'audio/*',
+    });
+    if (result.canceled) return null;
+    return result.assets.map((asset, i) => ({
+      uri: asset.uri,
+      name: asset.name?.trim() || `audio-${i + 1}`,
+      mime: asset.mimeType || 'audio/mpeg',
+    }));
   }
 
   const result = await DocumentPicker.getDocumentAsync({

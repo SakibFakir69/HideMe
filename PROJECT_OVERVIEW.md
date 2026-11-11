@@ -37,7 +37,7 @@ UI/UX canon lives in [`DESIGN.md`](./DESIGN.md).
 | Crypto | `@noble/hashes` (PBKDF2, SHA-256, HMAC), `@noble/ciphers` (AES-CTR/GCM), `expo-crypto` RNG |
 | Secrets | `expo-secure-store` (Keychain / Android Keystore) |
 | Files | `expo-file-system` (new `File`/`Directory` API) |
-| Media | `expo-image`, `expo-video`, `expo-image-manipulator` (thumbnails, EXIF strip) |
+| Media | `expo-image`, `expo-video`, `expo-audio` (playback only), `expo-image-manipulator` (thumbnails, EXIF strip) |
 | Picking | `expo-image-picker`, `expo-document-picker` |
 | Lock | `expo-local-authentication`, `expo-screen-capture` |
 | Ads | `react-native-google-mobile-ads` (AdMob banner / interstitial / rewarded) |
@@ -99,7 +99,7 @@ src/app/
 | File streaming | `lib/crypto/file-crypto.ts` | Chunked encrypt/decrypt with progress; encrypt-then-MAC; integrity verified **before** plaintext is released |
 | Secret / KEK | `lib/vault-secret.ts` | PBKDF2-SHA256 (**210k rounds**) → 64-byte DK: `[0:32]` verifier, `[32:64]` KEK that unwraps the master key. Android 8+ and iOS derive natively (`modules/vault-crypto`: platform PBKDF2, ~1 s); the JS fallback elsewhere produces identical bytes |
 | Session | `lib/vault-session.ts` | In-memory master key only; `lock()` zeroizes and runs cleanups; external store for React |
-| Storage | `lib/vault-store.ts` | Encrypted index + blobs, import pipeline, thumbnail cache, bin helpers |
+| Storage | `lib/vault-store.ts` | Encrypted index + blobs, import pipeline, thumbnail cache, bin helpers; index schema v3 (`lib/vault-kinds.ts`) |
 | Lockout | `lib/vault-lockout*.ts` | 3 free attempts, then 15s → 30s → … capped at 15 min; persisted across restarts |
 | Auto-lock | `lib/vault-autolock*.ts` | AppState watcher; Immediately / 30s / 1min / 5min; rewarded pause (1h) with live countdown screen |
 | Premium | `lib/premium.ts`, `lib/iap.ts` | Local entitlement in SecureStore + lazy `expo-iap` bridge (product `hideme_premium_lifetime`); gates ads and the pause |
@@ -177,13 +177,13 @@ so the stored record alone cannot be brute-forced cheaply and never contains the
 | Reminders | Daily 09:00 local notification while the bin has items; generic lock-screen text; permission handled in Settings |
 | Launcher disguise | Calculator / Notes / Photos / Weather / Music aliases; hide-all mode; dial-code restore |
 | Ads | Banner (hidden in select mode), interstitial after unlock (max 1/24h) and after every 2nd import, rewarded auto-lock pause; all skipped for premium |
-| Quality | Pure-core unit tests (envelope, PBKDF2 known-answer vectors, lockout, auto-lock, bin, ad cap) |
+| Audio | Own `audio` item kind, category tile, import row (audio-only picker), music icon in the grid and a player in the viewer (`expo-audio`, playback only — no mic permission) |
+| Quality | Pure-core unit tests (envelope, PBKDF2 known-answer vectors, item kinds + index migration, lockout, auto-lock, bin, ad cap) |
 
 ### Partial
 
 | Area | Gap |
 |---|---|
-| Audio | Import row folds audio into "Audio & other files"; no `audio` item kind, tile, or player |
 | Bulk share | The viewer shares one file via the system sheet; select mode still lacks share/export (no zip/multi-file share) |
 | Onboarding | 3 swipeable slides with brand gradient badges, pager dots, skip and a single CTA; setup-secret still needs the same visual pass |
 
@@ -222,7 +222,9 @@ so the stored record alone cannot be brute-forced cheaply and never contains the
 
 ### P1 — design-complete screens
 
-1. Audio category + player (extend `ItemKind`, import, tile, viewer).
+1. ~~Audio category + player~~ — done: `audio` item kind (index schema v3, with a
+   migration that re-files v2 audio from its mime), category tile, an
+   audio-only import row, and a player in the viewer.
 2. Bulk share/export in select mode (single-file share from the viewer now ships via `expo-sharing`).
 3. Setup-secret visual pass (onboarding slides are done: swipeable, gradient badges, dot pager).
 4. Premium receipt verification against the store (backend optional; the silent launch sync covers reinstall/device changes).

@@ -15,7 +15,7 @@ Type your secret code into the calculator keypad and the vault opens. Anyone els
 - Failed-PIN lockout: 3 free attempts, then exponential backoff (15s → 15min cap), persisted across restarts
 - Folders, search, photo/video/document import with progress
 - Photo, video and document viewers (tap-to-hide chrome, no video autoplay, fullscreen, single-file share)
-- Pinch-to-zoom, double-tap zoom and drag-to-pan in the photo viewer
+- Pinch-to-zoom, double-tap zoom and drag-to-pan in the photo viewer, plus a swipe pager through the files you were browsing
 - Change code, lock-now, storage stats, erase-all in settings
 - Premium (one-time $2.99): removes ads, unlocks the auto-lock pause without an ad, restore + silent launch-time store sync
 - Unlock Success screen after PIN/biometric entry, with the capped unlock interstitial

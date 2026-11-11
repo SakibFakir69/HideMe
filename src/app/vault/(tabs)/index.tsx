@@ -5,7 +5,6 @@ import { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  Dimensions,
   FlatList,
   Pressable,
   StyleSheet,
@@ -37,7 +36,9 @@ import {
 } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { useDebouncedValue } from '@/hooks/use-debounced-value';
+import { GRID_GAP, useGridColumns } from '@/hooks/use-grid-columns';
 import { useVaultIndex } from '@/hooks/use-vault-index';
+import { setBrowseList } from '@/lib/vault-browse';
 import { getMasterKey, lock } from '@/lib/vault-session';
 import {
   createFolder,
@@ -50,7 +51,6 @@ import {
 import type { VaultFolder, VaultItem } from '@/lib/vault-store';
 
 const NUM_COLUMNS = 3;
-const GRID_GAP = Spacing.two;
 const FOLDER_ICON = '#3B82F6';
 
 type Category = 'all' | 'photo' | 'video' | 'document';
@@ -84,14 +84,6 @@ export default function VaultHomeScreen() {
     });
   }, []);
   const startSelect = useCallback((id: string) => setSelected(new Set([id])), []);
-
-  const handleItemPress = useCallback(
-    (item: VaultItem) => {
-      if (selectMode) toggleSelect(item.id);
-      else router.push({ pathname: '/vault/item/[id]', params: { id: item.id } });
-    },
-    [selectMode, toggleSelect],
-  );
 
   const handleItemLongPress = useCallback(
     (item: VaultItem) => startSelect(item.id),
@@ -130,6 +122,20 @@ export default function VaultHomeScreen() {
     return category === 'all' ? base : base.filter((it) => it.kind === category);
   }, [index, effectiveQuery, category]);
 
+  const handleItemPress = useCallback(
+    (item: VaultItem) => {
+      if (selectMode) {
+        toggleSelect(item.id);
+        return;
+      }
+      // Remember what the user was looking at so the viewer can page
+      // through the same set with a swipe.
+      setBrowseList(items.map((entry) => entry.id));
+      router.push({ pathname: '/vault/item/[id]', params: { id: item.id } });
+    },
+    [selectMode, toggleSelect, items],
+  );
+
   const selectAll = () => setSelected(new Set(items.map((it) => it.id)));
 
   const onDeleteSelected = useCallback(async () => {
@@ -164,11 +170,7 @@ export default function VaultHomeScreen() {
     }
   }, [selected]);
 
-  const columns = useMemo(() => {
-    const width = Dimensions.get('window').width;
-    const usable = Math.min(width, MaxContentWidth) - Spacing.three * 2;
-    return Math.floor((usable - GRID_GAP * (NUM_COLUMNS - 1)) / NUM_COLUMNS);
-  }, []);
+  const columns = useGridColumns(NUM_COLUMNS);
 
   const onLock = useCallback(() => {
     lock();
@@ -506,6 +508,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.three,
     paddingBottom: 104,
     flexGrow: 1,
+    // The tile width is computed for MaxContentWidth, so the list has to
+    // actually be that wide — otherwise wide screens leave a gap per cell.
+    width: '100%',
+    maxWidth: MaxContentWidth,
+    alignSelf: 'center',
   },
   listContentSelecting: {
     paddingBottom: 96,

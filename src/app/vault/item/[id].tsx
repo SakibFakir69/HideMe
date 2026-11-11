@@ -9,11 +9,13 @@ import {
   ActivityIndicator,
   Alert,
   Animated,
+  FlatList,
   Pressable,
   StatusBar,
   StyleSheet,
   Text,
   View,
+  useWindowDimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -26,6 +28,7 @@ import { Fonts, Palette, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { useVaultIndex } from '@/hooks/use-vault-index';
 import { shareVaultFile } from '@/lib/share';
+import { getBrowseList } from '@/lib/vault-browse';
 import { getMasterKey } from '@/lib/vault-session';
 import {
   decryptToCache,
@@ -72,59 +75,61 @@ function documentIcon(mime: string): keyof typeof Ionicons.glyphMap {
 export default function ItemScreen() {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { index, loading, refresh } = useVaultIndex();
-  const [decrypt, setDecrypt] = useState<DecryptState>({
-    phase: 'working',
-    percent: 0,
-    pass: 'verify',
-  });
   const [menuOpen, setMenuOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [moving, setMoving] = useState(false);
-  const [attempt, setAttempt] = useState(0);
   const [chromeShown, setChromeShown] = useState(true);
   const [videoPlaying, setVideoPlaying] = useState(false);
-  const percentRef = useRef(0);
-  const lastPassRef = useRef<'verify' | 'decrypt'>('verify');
 
-  const item = useMemo(() => index?.items.find((it) => it.id === id) ?? null, [index, id]);
+  /**
+   * The pages the user can swipe through: the list the grid was showing when
+   * they tapped this item. The id list lives in memory (see `vault-browse`),
+   * so the route stays short.
+   */
+  const browsePages = useMemo(() => {
+    if (!index) return [];
+    const byId = new Map(index.items.map((it) => [it.id, it]));
+    const pages: VaultItem[] = [];
+    for (const browseId of getBrowseList()) {
+      const item = byId.get(browseId);
+      if (item && item.deletedAt === undefined) pages.push(item);
+    }
+    return pages;
+  }, [index]);
 
-  // Reset the viewer whenever the item reference changes
-  // (adjust-state-during-render — avoids setState-in-effect).
-  const [prevItem, setPrevItem] = useState<VaultItem | null>(item);
-  if (item !== prevItem) {
-    setPrevItem(item);
-    setDecrypt({ phase: 'working', percent: 0, pass: 'verify' });
-    setChromeShown(true);
-    setVideoPlaying(false);
-    setAttempt(0);
-  }
+  const pages = useMemo(() => {
+    if (browsePages.length > 0) return browsePages;
+    // Opened directly (deep link) — there is nothing to page through.
+    const single = index?.items.find((it) => it.id === id);
+    return single ? [single] : [];
+  }, [browsePages, index, id]);
 
-  useEffect(() => {
-    if (!item) return;
-    let cancelled = false;
-    percentRef.current = 0;
-    decryptToCache(getMasterKey(), item, ({ processed, total }) => {
-      if (cancelled || total <= 0) return;
-      const next = Math.floor((processed / total) * 100);
-      const pass: 'verify' | 'decrypt' = processed < total / 2 ? 'verify' : 'decrypt';
-      if (next !== percentRef.current || pass !== lastPassRef.current) {
-        percentRef.current = next;
-        lastPassRef.current = pass;
-        setDecrypt({ phase: 'working', percent: next, pass });
-      }
-    })
-      .then((file) => {
-        if (!cancelled) setDecrypt({ phase: 'ready', file });
-      })
-      .catch((error) => {
-        if (!cancelled) setDecrypt({ phase: 'error', message: errorMessage(error) });
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [item, attempt]);
+  const currentIndex = useMemo(() => {
+    const at = pages.findIndex((it) => it.id === id);
+    return at >= 0 ? at : 0;
+  }, [pages, id]);
+
+  // FlatList captures `onViewableItemsChanged` when the list is created, so
+  // this only needs to stay correct for the lifetime of the list.
+  const handleViewableItemsChanged = useCallback<
+    NonNullable<FlatList<VaultItem>['props']['onViewableItemsChanged']>
+  >(
+    ({ viewableItems }) => {
+      const index = viewableItems[0]?.index;
+      if (index === undefined || index === null) return;
+      const next = pages[index];
+      // Update as soon as the next page becomes visible — a video that is
+      // being swiped away must stop playing right away, not after the
+      // momentum settles.
+      if (next && next.id !== id) router.setParams({ id: next.id });
+    },
+    [pages, id],
+  );
+
+  const item = pages[currentIndex] ?? null;
 
   // While a video plays the chrome fades out; for photos it is tap-toggled.
   const chromeVisible = item?.kind === 'video' ? !videoPlaying : chromeShown;
@@ -138,22 +143,17 @@ export default function ItemScreen() {
     }).start();
   }, [chromeOpacity, chromeVisible]);
 
-  const onRetry = useCallback(() => {
-    percentRef.current = 0;
-    lastPassRef.current = 'verify';
-    setDecrypt({ phase: 'working', percent: 0, pass: 'verify' });
-    setAttempt((value) => value + 1);
-  }, []);
-
   // Tapping the photo toggles the overlay chrome. Stable identity so the
   // zoom gesture does not re-register on every render.
   const toggleChrome = useCallback(() => {
     setChromeShown((visible) => !visible);
   }, []);
 
-  const onShare = useCallback(
-    async (file: File) => {
-      if (!item) return;
+  const onShare = useCallback(async () => {
+    if (!item) return;
+    try {
+      // Already decrypted by the stage, so this resolves from the cache.
+      const file = await decryptToCache(getMasterKey(), item);
       const result = await shareVaultFile(file, {
         name: item.name,
         ext: item.ext,
@@ -167,9 +167,10 @@ export default function ItemScreen() {
       } else if (result === 'failed') {
         Alert.alert('Could not share', 'The file couldn’t be handed to another app.');
       }
-    },
-    [item],
-  );
+    } catch (error) {
+      Alert.alert('Could not share', errorMessage(error));
+    }
+  }, [item]);
 
   const onDelete = useCallback(async () => {
     if (!item) return;
@@ -216,60 +217,13 @@ export default function ItemScreen() {
     );
   }
 
-  let stage: ReactNode;
-  if (!item) {
-    stage = (
-      <View style={styles.centerFill}>
-        <ActivityIndicator color="rgba(255,255,255,0.6)" />
-      </View>
-    );
-  } else if (decrypt.phase === 'working') {
-    stage = (
-      <DecryptProgress percent={decrypt.percent} pass={decrypt.pass} name={item.name} />
-    );
-  } else if (decrypt.phase === 'error') {
-    stage = (
-      <ErrorState
-        message={decrypt.message}
-        onRetry={onRetry}
-        onBack={() => router.back()}
-        retryable
-      />
-    );
-  } else if (item.kind === 'photo') {
-    stage = (
-      <ZoomableImage
-        key={item.id}
-        uri={decrypt.file.uri}
-        onTap={toggleChrome}
-        accessibilityLabel={`${item.name}. Tap to hide or show the controls, double tap to zoom.`}
-      />
-    );
-  } else if (item.kind === 'video') {
-    stage = (
-      <VideoPlayerView
-        key={item.id}
-        uri={decrypt.file.uri}
-        onPlayingChange={setVideoPlaying}
-      />
-    );
-  } else {
-    stage = (
-      <DocumentView
-        item={item}
-        file={decrypt.file}
-        onOpenError={(message) => Alert.alert('Could not open document', message)}
-      />
-    );
-  }
-
   const menuActions: SheetAction[] = [
-    ...(item && decrypt.phase === 'ready'
+    ...(item
       ? [
           {
             label: 'Share',
             icon: <Ionicons name="share-outline" size={18} color={theme.text} />,
-            onSelect: () => void onShare(decrypt.file),
+            onSelect: () => void onShare(),
           },
         ]
       : []),
@@ -294,7 +248,47 @@ export default function ItemScreen() {
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" />
-      <View style={styles.stage}>{stage}</View>
+      <View style={styles.stage}>
+        {pages.length === 0 ? (
+          <View style={styles.centerFill}>
+            <ActivityIndicator color="rgba(255,255,255,0.6)" />
+          </View>
+        ) : (
+          <FlatList
+            horizontal
+            pagingEnabled
+            showsHorizontalScrollIndicator={false}
+            data={pages}
+            keyExtractor={(entry) => entry.id}
+            extraData={currentIndex}
+            getItemLayout={(_, index) => ({ length: width, offset: width * index, index })}
+            initialScrollIndex={currentIndex}
+            initialNumToRender={1}
+            maxToRenderPerBatch={2}
+            windowSize={5}
+            onViewableItemsChanged={handleViewableItemsChanged}
+            onMomentumScrollEnd={(event) => {
+              const next = Math.round(event.nativeEvent.contentOffset.x / width);
+              const nextItem = pages[next];
+              if (nextItem && nextItem.id !== id) {
+                setChromeShown(true);
+                setVideoPlaying(false);
+                router.setParams({ id: nextItem.id });
+              }
+            }}
+            renderItem={({ item: page, index: pageIndex }) => (
+              <View style={{ width }}>
+                <ViewerStage
+                  item={page}
+                  isActive={pageIndex === currentIndex}
+                  onTapToggle={toggleChrome}
+                  onVideoPlayingChange={setVideoPlaying}
+                />
+              </View>
+            )}
+          />
+        )}
+      </View>
 
       <Animated.View
         pointerEvents={chromeVisible ? 'box-none' : 'none'}
@@ -312,6 +306,7 @@ export default function ItemScreen() {
               {item ? (
                 <Text style={styles.headerSubtitle} numberOfLines={1}>
                   {describeItem(item)}
+                  {pages.length > 1 ? `   ·   ${currentIndex + 1}/${pages.length}` : ''}
                 </Text>
               ) : null}
             </View>
@@ -357,6 +352,106 @@ export default function ItemScreen() {
       />
     </View>
   );
+}
+
+/**
+ * One page of the viewer: decrypts the item and renders its stage. Each page
+ * owns its state, so swiping away and back re-reads the cached plaintext
+ * instead of keeping every file decrypted in memory.
+ */
+function ViewerStage({
+  item,
+  isActive,
+  onTapToggle,
+  onVideoPlayingChange,
+}: {
+  item: VaultItem;
+  isActive: boolean;
+  onTapToggle: () => void;
+  onVideoPlayingChange: (playing: boolean) => void;
+}) {
+  const [decrypt, setDecrypt] = useState<DecryptState>({
+    phase: 'working',
+    percent: 0,
+    pass: 'verify',
+  });
+  const [attempt, setAttempt] = useState(0);
+  const percentRef = useRef(0);
+  const lastPassRef = useRef<'verify' | 'decrypt'>('verify');
+
+  useEffect(() => {
+    let cancelled = false;
+    percentRef.current = 0;
+    lastPassRef.current = 'verify';
+    decryptToCache(getMasterKey(), item, ({ processed, total }) => {
+      if (cancelled || total <= 0) return;
+      const next = Math.floor((processed / total) * 100);
+      const pass: 'verify' | 'decrypt' = processed < total / 2 ? 'verify' : 'decrypt';
+      if (next !== percentRef.current || pass !== lastPassRef.current) {
+        percentRef.current = next;
+        lastPassRef.current = pass;
+        setDecrypt({ phase: 'working', percent: next, pass });
+      }
+    })
+      .then((file) => {
+        if (!cancelled) setDecrypt({ phase: 'ready', file });
+      })
+      .catch((error) => {
+        if (!cancelled) setDecrypt({ phase: 'error', message: errorMessage(error) });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [item, attempt]);
+
+  const onRetry = useCallback(() => {
+    percentRef.current = 0;
+    lastPassRef.current = 'verify';
+    setDecrypt({ phase: 'working', percent: 0, pass: 'verify' });
+    setAttempt((value) => value + 1);
+  }, []);
+
+  let stage: ReactNode;
+  if (decrypt.phase === 'working') {
+    stage = <DecryptProgress percent={decrypt.percent} pass={decrypt.pass} name={item.name} />;
+  } else if (decrypt.phase === 'error') {
+    stage = (
+      <ErrorState
+        message={decrypt.message}
+        onRetry={onRetry}
+        onBack={() => router.back()}
+        retryable
+      />
+    );
+  } else if (item.kind === 'photo') {
+    stage = (
+      <ZoomableImage
+        key={item.id}
+        uri={decrypt.file.uri}
+        onTap={onTapToggle}
+        accessibilityLabel={`${item.name}. Tap to hide or show the controls, double tap to zoom.`}
+      />
+    );
+  } else if (item.kind === 'video') {
+    stage = (
+      <VideoPlayerView
+        key={item.id}
+        uri={decrypt.file.uri}
+        isActive={isActive}
+        onPlayingChange={onVideoPlayingChange}
+      />
+    );
+  } else {
+    stage = (
+      <DocumentView
+        item={item}
+        file={decrypt.file}
+        onOpenError={(message) => Alert.alert('Could not open document', message)}
+      />
+    );
+  }
+
+  return <View style={styles.stage}>{stage}</View>;
 }
 
 /** Decryption is the first thing you see, so it gets the whole stage. */
@@ -430,9 +525,11 @@ function ErrorState({
 
 function VideoPlayerView({
   uri,
+  isActive,
   onPlayingChange,
 }: {
   uri: string;
+  isActive: boolean;
   onPlayingChange: (playing: boolean) => void;
 }) {
   // Deliberately no autoplay: opening a file should never start playing sound.
@@ -443,6 +540,15 @@ function VideoPlayerView({
   // Lets the parent fade its chrome out while the video is playing and bring
   // it back on pause/end, so the overlay never fights the native controls.
   useEventListener(player, 'playingChange', ({ isPlaying }) => onPlayingChange(isPlaying));
+
+  // A video that is not the current page must not keep playing in the
+  // background while the user swipes through the gallery.
+  useEffect(() => {
+    if (!isActive) {
+      player.pause();
+      onPlayingChange(false);
+    }
+  }, [isActive, onPlayingChange, player]);
 
   const failed = status === 'error';
   const buffering = started && (status === 'loading' || status === 'idle');

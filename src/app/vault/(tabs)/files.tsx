@@ -9,7 +9,7 @@ import { SearchBar } from '@/components/vault/search-bar';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Fab } from '@/components/ui/fab';
-import { Fonts, Radius, Spacing } from '@/constants/theme';
+import { Fonts, MaxContentWidth, Radius, Spacing } from '@/constants/theme';
 import { useDebouncedValue } from '@/hooks/use-debounced-value';
 import { useTheme } from '@/hooks/use-theme';
 import { useVaultIndex } from '@/hooks/use-vault-index';
@@ -110,6 +110,10 @@ const styles = StyleSheet.create({
     paddingBottom: 104,
     gap: Spacing.two,
     flexGrow: 1,
+    // Keep the list aligned with the other vault screens on wide displays.
+    width: '100%',
+    maxWidth: MaxContentWidth,
+    alignSelf: 'center',
   },
   headerBlock: {
     gap: Spacing.three,

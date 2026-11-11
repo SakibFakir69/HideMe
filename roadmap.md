@@ -19,16 +19,19 @@ Perf / polish punch list. Ordered by impact.
 - [x] **6. enc/dec make more faster** — native PBKDF2 on Android 8+ and iOS,
       JS fallback produces identical bytes (pinned by known-answer tests).
 - [x] **7. view show perfect way** — pinch-to-zoom, double-tap zoom and
-      drag-to-pan in the photo viewer, with the photo clamped to the viewport.
+      drag-to-pan in the photo viewer, with the photo clamped to the viewport,
+      plus a swipe pager through the items the grid was showing.
+- [x] **4. fix all type object sizeing** — the grid re-measures on rotation
+      and in split-screen, and the list is actually constrained to
+      `MaxContentWidth` so the tiles fill their cells on wide displays. The
+      grid is still a fixed square crop (`contentFit="cover"`); DESIGN.md asks
+      for a responsive masonry grid that keeps the real ratio.
 
 ## Open
 
 - [ ] **2. fix all type object import issue** — no `any` left in `src/`; keep
       it that way when adding code.
-- [ ] **4. fix all type object sizing** — audit image aspect ratios and tile
-      dimensions; the grid is still a fixed square crop (`contentFit="cover"`),
-      DESIGN.md asks for a responsive masonry grid that keeps the real ratio.
-- [ ] Swipe pager between sibling items in the viewer.
+- [ ] Masonry grid that keeps the real photo aspect ratio.
 - [ ] Audio category + player (extend `ItemKind`, import, tile, viewer).
 - [ ] Bulk share/export in select mode (no zip / multi-file share yet).
 - [ ] Setup-secret visual pass (onboarding slides are done).

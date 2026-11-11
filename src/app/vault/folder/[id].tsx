@@ -4,7 +4,6 @@ import { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  Dimensions,
   FlatList,
   Pressable,
   StyleSheet,
@@ -26,14 +25,15 @@ import { ThemedView } from '@/components/themed-view';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { useDebouncedValue } from '@/hooks/use-debounced-value';
+import { GRID_GAP, useGridColumns } from '@/hooks/use-grid-columns';
 import { useVaultImport } from '@/hooks/use-vault-import';
 import { useVaultIndex } from '@/hooks/use-vault-index';
+import { setBrowseList } from '@/lib/vault-browse';
 import { getMasterKey } from '@/lib/vault-session';
 import { deleteFolder, moveItemsToBin, renameFolder, restoreItems, searchItems } from '@/lib/vault-store';
 import type { VaultItem } from '@/lib/vault-store';
 
 const NUM_COLUMNS = 3;
-const GRID_GAP = Spacing.two;
 
 export default function FolderScreen() {
   const theme = useTheme();
@@ -62,14 +62,6 @@ export default function FolderScreen() {
   }, []);
   const startSelect = useCallback((id: string) => setSelected(new Set([id])), []);
 
-  const handleItemPress = useCallback(
-    (item: VaultItem) => {
-      if (selectMode) toggleSelect(item.id);
-      else router.push({ pathname: '/vault/item/[id]', params: { id: item.id } });
-    },
-    [selectMode, toggleSelect],
-  );
-
   const handleItemLongPress = useCallback(
     (item: VaultItem) => startSelect(item.id),
     [startSelect],
@@ -85,6 +77,20 @@ export default function FolderScreen() {
     const scoped = searchItems(index, effectiveQuery.trim(), id);
     return scoped;
   }, [index, id, effectiveQuery]);
+
+  const handleItemPress = useCallback(
+    (item: VaultItem) => {
+      if (selectMode) {
+        toggleSelect(item.id);
+        return;
+      }
+      // Remember what the user was looking at so the viewer can page
+      // through the same set with a swipe.
+      setBrowseList(items.map((entry) => entry.id));
+      router.push({ pathname: '/vault/item/[id]', params: { id: item.id } });
+    },
+    [selectMode, toggleSelect, items],
+  );
 
   const selectAll = () => setSelected(new Set(items.map((it) => it.id)));
 
@@ -120,11 +126,7 @@ export default function FolderScreen() {
     }
   }, [selected]);
 
-  const columns = useMemo(() => {
-    const width = Dimensions.get('window').width;
-    const usable = Math.min(width, MaxContentWidth) - Spacing.three * 2;
-    return Math.floor((usable - GRID_GAP * (NUM_COLUMNS - 1)) / NUM_COLUMNS);
-  }, []);
+  const columns = useGridColumns(NUM_COLUMNS);
 
   const onDelete = useCallback(async () => {
     if (!folder) return;
@@ -377,6 +379,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.three,
     paddingBottom: Spacing.six,
     flexGrow: 1,
+    // The tile width is computed for MaxContentWidth, so the list has to
+    // actually be that wide — otherwise wide screens leave a gap per cell.
+    width: '100%',
+    maxWidth: MaxContentWidth,
+    alignSelf: 'center',
   },
   listContentSelecting: {
     paddingBottom: 96,

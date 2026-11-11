@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
-import { Alert, Dimensions, FlatList, StyleSheet, View } from 'react-native';
+import { Alert, FlatList, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { confirmDestructive } from '@/components/vault/confirm';
@@ -14,12 +14,13 @@ import { Fab } from '@/components/ui/fab';
 import { SectionTitle } from '@/components/ui/section-title';
 import { Fonts, MaxContentWidth, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
+import { GRID_GAP, useGridColumns } from '@/hooks/use-grid-columns';
 import { useVaultIndex } from '@/hooks/use-vault-index';
+import { setBrowseList } from '@/lib/vault-browse';
 import { getMasterKey } from '@/lib/vault-session';
 import { moveItemsToBin, restoreItems, searchItems, type VaultItem } from '@/lib/vault-store';
 
 const NUM_COLUMNS = 3;
-const GRID_GAP = Spacing.two;
 
 type MediaFilter = 'all' | 'photo' | 'video';
 
@@ -36,11 +37,7 @@ export default function GalleryScreen() {
     return filter === 'all' ? media : media.filter((it) => it.kind === filter);
   }, [index, filter]);
 
-  const columns = useMemo(() => {
-    const width = Dimensions.get('window').width;
-    const usable = Math.min(width, MaxContentWidth) - Spacing.three * 2;
-    return Math.floor((usable - GRID_GAP * (NUM_COLUMNS - 1)) / NUM_COLUMNS);
-  }, []);
+  const columns = useGridColumns(NUM_COLUMNS);
 
   // Stable callbacks: the grid re-renders on every index mutation, and new
   // function identities would defeat the memoized ItemTile.
@@ -56,10 +53,16 @@ export default function GalleryScreen() {
 
   const handlePress = useCallback(
     (item: VaultItem) => {
-      if (selectMode) toggleSelect(item.id);
-      else router.push({ pathname: '/vault/item/[id]', params: { id: item.id } });
+      if (selectMode) {
+        toggleSelect(item.id);
+        return;
+      }
+      // Remember what the user was looking at so the viewer can page
+      // through the same set with a swipe.
+      setBrowseList(items.map((entry) => entry.id));
+      router.push({ pathname: '/vault/item/[id]', params: { id: item.id } });
     },
-    [selectMode, toggleSelect],
+    [selectMode, toggleSelect, items],
   );
 
   const handleLongPress = useCallback((item: VaultItem) => {
@@ -190,6 +193,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.three,
     paddingBottom: 104,
     flexGrow: 1,
+    // The tile width is computed for MaxContentWidth, so the list has to
+    // actually be that wide — otherwise wide screens leave a gap per cell.
+    width: '100%',
+    maxWidth: MaxContentWidth,
+    alignSelf: 'center',
   },
   listContentSelecting: {
     paddingBottom: 96,

@@ -167,7 +167,7 @@ so the stored record alone cannot be brute-forced cheaply and never contains the
 | Privacy | Screenshot blocking + app-switcher shield while unlocked; restored for the gate |
 | Import | Photos/videos (gallery or camera), documents, other files; per-file progress, cancelable |
 | Organization | Folders, rename, move, search (debounced), storage stats |
-| Viewers | Immersive black stage with tap-to-hide chrome; photos fit-to-screen with pinch-to-zoom, double-tap zoom and drag-to-pan (clamped to the viewport), video (`expo-video`, no autoplay, native controls + fullscreen), documents open in the system preview sheet from a card; Share via the More sheet (`expo-sharing`) |
+| Viewers | Immersive black stage with tap-to-hide chrome; photos fit-to-screen with pinch-to-zoom, double-tap zoom and drag-to-pan (clamped to the viewport), swipe-pager through the list the grid was showing, video (`expo-video`, no autoplay, native controls + fullscreen, pauses when swiped away), documents open in the system preview sheet from a card; Share via the More sheet (`expo-sharing`) |
 | Deletion | Move to bin, restore, permanent delete, erase-all; 30-day auto-expiry |
 | Gallery | Responsive grid, duration badges, All/Photos/Videos chips, multi-select + bulk actions |
 | Settings | Change code, biometric switch, auto-lock timer, theme (system/light/dark), app icon, reminders, storage, erase |
@@ -210,11 +210,14 @@ so the stored record alone cannot be brute-forced cheaply and never contains the
    decryption budget, and import overlaps thumbnail building with the next file.
 4. ~~**"Instant show"**~~ — done: sized placeholder instead of a spinner, no filesystem
    stat during render, no layout jump when the thumbnail or the photo arrives.
-5. **Type/object sizing** — audit prop types, image aspect ratios, and tile dimensions.
-   The grid is still a fixed square crop (`contentFit="cover"`); DESIGN.md asks for a
-   responsive masonry grid that keeps the real ratio.
-6. **Viewer polish** — pinch zoom, double-tap zoom and drag-to-pan ship; still to add:
-   swipe pager and document scroll.
+5. **Type/object sizing** — the grid re-measures on rotation and in
+   split-screen (`useGridColumns`), and the lists are constrained to
+   `MaxContentWidth` so the tiles fill their cells on wide displays. Still
+   open: the grid is a fixed square crop (`contentFit="cover"`), while
+   DESIGN.md asks for a responsive masonry grid that keeps the real ratio.
+6. **Viewer polish** — pinch zoom, double-tap zoom and drag-to-pan ship, and
+   the viewer pages through the items the grid was showing. Still to add:
+   document scroll.
 7. ~~**Type/import cleanup**~~ — no `any` left in `src/`; keep it that way.
 
 ### P1 — design-complete screens
@@ -223,7 +226,9 @@ so the stored record alone cannot be brute-forced cheaply and never contains the
 2. Bulk share/export in select mode (single-file share from the viewer now ships via `expo-sharing`).
 3. Setup-secret visual pass (onboarding slides are done: swipeable, gradient badges, dot pager).
 4. Premium receipt verification against the store (backend optional; the silent launch sync covers reinstall/device changes).
-5. Viewer swipe pager.
+5. ~~**Viewer swipe pager**~~ — done: the grids record the list they were
+   showing (`lib/vault-browse.ts`) and the viewer pages through it; a video
+   that is swiped away stops playing immediately.
 
 ### P2 — hardening & ops
 

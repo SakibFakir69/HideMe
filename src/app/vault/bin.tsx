@@ -10,7 +10,7 @@ import { formatBytes } from '@/components/vault/format';
 import { Thumbnail } from '@/components/vault/thumbnail';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Spacing } from '@/constants/theme';
+import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { useVaultIndex } from '@/hooks/use-vault-index';
 import { daysLeft } from '@/lib/vault-bin-core';
@@ -228,6 +228,10 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     gap: Spacing.two,
     paddingTop: Spacing.one,
+    // Keep the list aligned with the other vault screens on wide displays.
+    width: '100%',
+    maxWidth: MaxContentWidth,
+    alignSelf: 'center',
   },
   row: {
     flexDirection: 'row',

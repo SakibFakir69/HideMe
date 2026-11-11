@@ -159,7 +159,7 @@ so the stored record alone cannot be brute-forced cheaply and never contains the
 | Area | Details |
 |---|---|
 | Disguise gate | Real calculator (expression + result, shrink-to-fit), anonymous dark UI |
-| Setup | 6–12 digit code, confirm step, unrecoverable-code warning |
+| Setup | 6–12 digit code, confirm step, unrecoverable-code warning, biometric opt-in |
 | PIN unlock | PBKDF2 210k → AES-256-GCM master-key wrap, constant-time verify; native derivation on Android 8+ and iOS |
 | Biometric unlock | Face ID / fingerprint; master key in Keychain/Keystore; enabled from Settings (with PIN confirmation)
 | Lockout | 3 free attempts → exponential backoff (15s…15min), survives restart |
@@ -185,7 +185,7 @@ so the stored record alone cannot be brute-forced cheaply and never contains the
 | Area | Gap |
 |---|---|
 | Bulk share | The viewer shares one file via the system sheet; select mode still lacks share/export (no zip/multi-file share) |
-| Onboarding | 3 swipeable slides with brand gradient badges, pager dots, skip and a single CTA; setup-secret still needs the same visual pass |
+| Onboarding | 3 swipeable slides with brand gradient badges, pager dots, skip and a single CTA; setup-secret got the same treatment |
 
 ### Not built
 
@@ -226,7 +226,8 @@ so the stored record alone cannot be brute-forced cheaply and never contains the
    migration that re-files v2 audio from its mime), category tile, an
    audio-only import row, and a player in the viewer.
 2. Bulk share/export in select mode (single-file share from the viewer now ships via `expo-sharing`).
-3. Setup-secret visual pass (onboarding slides are done: swipeable, gradient badges, dot pager).
+3. ~~Setup-secret visual pass~~ — done: gradient badge, digit counter, the
+   recovery warning the design canon asks for, and a biometric opt-in.
 4. Premium receipt verification against the store (backend optional; the silent launch sync covers reinstall/device changes).
 5. ~~**Viewer swipe pager**~~ — done: the grids record the list they were
    showing (`lib/vault-browse.ts`) and the viewer pages through it; a video

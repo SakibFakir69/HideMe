@@ -11,9 +11,21 @@ interface CalcKeyProps {
   onPress: () => void;
   variant?: KeyVariant;
   span?: number;
+  /**
+   * Minimum key height. The calculator disguise uses the taller default so it
+   * reads like a real calculator; the setup screen needs shorter keys to fit
+   * its extra rows on short screens.
+   */
+  minHeight?: number;
 }
 
-export function CalcKey({ label, onPress, variant = 'digit', span = 1 }: CalcKeyProps) {
+export function CalcKey({
+  label,
+  onPress,
+  variant = 'digit',
+  span = 1,
+  minHeight,
+}: CalcKeyProps) {
   const theme = useTheme();
 
   const surface =
@@ -59,7 +71,11 @@ export function CalcKey({ label, onPress, variant = 'digit', span = 1 }: CalcKey
         onPress={onPress}
         accessibilityRole="button"
         accessibilityLabel={label}
-        style={({ pressed }) => [styles.key, keyStyle(pressed)]}>
+        style={({ pressed }) => [
+          styles.key,
+          minHeight !== undefined && { minHeight },
+          keyStyle(pressed),
+        ]}>
         <LinearGradient
           colors={[...BrandGradient]}
           start={{ x: 0, y: 0 }}
@@ -76,7 +92,11 @@ export function CalcKey({ label, onPress, variant = 'digit', span = 1 }: CalcKey
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={label}
-      style={({ pressed }) => [styles.key, keyStyle(pressed)]}>
+      style={({ pressed }) => [
+        styles.key,
+        minHeight !== undefined && { minHeight },
+        keyStyle(pressed),
+      ]}>
       {labelNode}
     </Pressable>
   );

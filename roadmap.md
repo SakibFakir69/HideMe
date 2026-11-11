@@ -37,7 +37,10 @@ Perf / polish punch list. Ordered by impact.
       migration), category tile, audio-only import row and a player in the
       viewer.
 - [ ] Bulk share/export in select mode (no zip / multi-file share yet).
-- [ ] Setup-secret visual pass (onboarding slides are done).
+- [x] Setup-secret visual pass — gradient badge, digit counter with pending
+      slots, the "choose something memorable, it cannot be recovered" warning
+      the design canon asks for, and a biometric opt-in that fills the
+      Keychain/Keystore slot while the master key is in memory.
 - [ ] Store-side purchase verification (entitlement is local for now).
 
 ## Later

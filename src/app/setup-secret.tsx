@@ -1,14 +1,31 @@
+import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Switch,
+  Text,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { CalcKey } from '@/components/calc-key';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Fonts, MaxContentWidth, Spacing } from '@/constants/theme';
+import { BrandGradient, Fonts, MaxContentWidth, Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
-import { MAX_CODE_LENGTH, MIN_CODE_LENGTH, hasSecret, setupSecretCode } from '@/lib/vault-secret';
+import {
+  MAX_CODE_LENGTH,
+  MIN_CODE_LENGTH,
+  hasSecret,
+  isBiometricAvailable,
+  setupSecretCode,
+  setBiometricEnabled,
+} from '@/lib/vault-secret';
 import { unlock } from '@/lib/vault-session';
 
 type Phase = 'checking' | 'entry' | 'confirm' | 'already-set' | 'working';
@@ -27,6 +44,8 @@ const DIGIT_KEYS: { label: string; span?: number }[][] = [
   [{ label: '⌫' }, { label: '0', span: 2 }],
 ];
 
+const BIOMETRIC_LABEL = Platform.OS === 'ios' ? 'Face ID' : 'fingerprint';
+
 export default function SetupSecretScreen() {
   const theme = useTheme();
   const [form, setForm] = useState<FormState>({
@@ -35,6 +54,8 @@ export default function SetupSecretScreen() {
     entry: '',
     message: '',
   });
+  const [biometricAvailable, setBiometricAvailable] = useState(false);
+  const [biometricOptIn, setBiometricOptIn] = useState(true);
 
   useEffect(() => {
     let mounted = true;
@@ -46,6 +67,9 @@ export default function SetupSecretScreen() {
       .catch(() => {
         if (mounted) setForm((f) => ({ ...f, phase: 'entry' }));
       });
+    void isBiometricAvailable().then((available) => {
+      if (mounted) setBiometricAvailable(available);
+    });
     return () => {
       mounted = false;
     };
@@ -116,7 +140,17 @@ export default function SetupSecretScreen() {
       }),
     ]);
     raced.then(
-      (masterKey) => {
+      async (masterKey) => {
+        if (cancelled) return;
+        // The master key only exists in memory right now, so this is the one
+        // moment the biometric slot can be filled with it.
+        if (biometricOptIn) {
+          try {
+            await setBiometricEnabled(true, masterKey);
+          } catch {
+            // Biometrics are a convenience — the code still opens the vault.
+          }
+        }
         if (cancelled) return;
         unlock(masterKey);
         router.replace('/vault');
@@ -135,7 +169,7 @@ export default function SetupSecretScreen() {
       cancelled = true;
       if (timer) clearTimeout(timer);
     };
-  }, [form.phase, form.entry]);
+  }, [form.phase, form.entry, biometricOptIn]);
 
   const phase = form.phase;
   const entry = form.entry;
@@ -159,9 +193,19 @@ export default function SetupSecretScreen() {
     <ThemedView style={styles.container}>
       <SafeAreaView style={styles.safeArea}>
         <View style={styles.inner}>
-          <ThemedText type="subtitle" style={styles.title}>
-            Vault setup
-          </ThemedText>
+          <View style={styles.titleRow}>
+            <LinearGradient
+              colors={[...BrandGradient]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.brandBadge}>
+              <Ionicons name="lock-closed" size={14} color="#FFFFFF" />
+            </LinearGradient>
+            <ThemedText type="subtitle" style={styles.title}>
+              Vault setup
+            </ThemedText>
+          </View>
+
           <View style={styles.subtitleRow}>
             {phase === 'working' && <ActivityIndicator size="small" color={theme.tint} />}
             <ThemedText type="small" themeColor="textSecondary" style={styles.subtitle}>
@@ -188,6 +232,30 @@ export default function SetupSecretScreen() {
           <ThemedText type="small" themeColor="textSecondary" style={styles.message}>
             {hint}
           </ThemedText>
+
+          {biometricAvailable && phase !== 'already-set' && (
+            <View style={[styles.biometricRow, { backgroundColor: theme.backgroundElement }]}>
+              <Ionicons name="finger-print" size={18} color={theme.textSecondary} />
+              <ThemedText type="small" style={styles.biometricLabel}>
+                Also unlock with {BIOMETRIC_LABEL}
+              </ThemedText>
+              <Switch
+                value={biometricOptIn}
+                onValueChange={setBiometricOptIn}
+                disabled={phase === 'working'}
+                accessibilityLabel={`Also unlock with ${BIOMETRIC_LABEL}`}
+                trackColor={{ true: theme.tint, false: theme.backgroundSelected }}
+                thumbColor="#FFFFFF"
+              />
+            </View>
+          )}
+
+          <View style={styles.warningRow}>
+            <Ionicons name="warning-outline" size={15} color={theme.textSecondary} />
+            <ThemedText type="small" themeColor="textSecondary" style={styles.warningText}>
+              Choose something memorable. If you lose this code, your files cannot be recovered.
+            </ThemedText>
+          </View>
 
           {phase === 'already-set' ? (
             <Pressable
@@ -216,6 +284,7 @@ export default function SetupSecretScreen() {
                         key="back"
                         label="⌫"
                         variant="fn"
+                        minHeight={KEY_HEIGHT}
                         onPress={backspace}
                       />
                     ) : (
@@ -224,6 +293,7 @@ export default function SetupSecretScreen() {
                         label={key.label}
                         variant="digit"
                         span={key.span}
+                        minHeight={KEY_HEIGHT}
                         onPress={() => append(key.label)}
                       />
                     ),
@@ -231,7 +301,13 @@ export default function SetupSecretScreen() {
                 </View>
               ))}
               <View style={[styles.row, { backgroundColor: theme.background }]}>
-                <CalcKey label={actionLabel} variant="accent" span={4} onPress={commit} />
+                <CalcKey
+                  label={actionLabel}
+                  variant="accent"
+                  span={4}
+                  minHeight={KEY_HEIGHT}
+                  onPress={commit}
+                />
               </View>
             </View>
           )}
@@ -242,6 +318,11 @@ export default function SetupSecretScreen() {
 }
 
 const LINE = 1;
+/**
+ * Shorter than the calculator disguise's keys: this screen carries extra rows
+ * (biometric opt-in, recovery warning) and has to fit on short screens.
+ */
+const KEY_HEIGHT = 52;
 
 const styles = StyleSheet.create({
   container: {
@@ -258,11 +339,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.three,
     gap: Spacing.two,
   },
-  title: {
-    textAlign: 'center',
-    marginTop: Spacing.four,
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.two,
+    marginTop: Spacing.three,
   },
-  subtitle: {
+  brandBadge: {
+    width: 26,
+    height: 26,
+    borderRadius: Radius.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  title: {
     textAlign: 'center',
   },
   subtitleRow: {
@@ -270,6 +361,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: Spacing.one,
+  },
+  subtitle: {
+    textAlign: 'center',
   },
   codeBox: {
     alignItems: 'center',
@@ -287,6 +381,28 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     minHeight: 20,
   },
+  biometricRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.two,
+    borderRadius: Radius.md,
+  },
+  biometricLabel: {
+    flex: 1,
+  },
+  warningRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: Spacing.two,
+    paddingHorizontal: Spacing.one,
+  },
+  warningText: {
+    flex: 1,
+    fontSize: 12,
+    lineHeight: 17,
+  },
   keypad: {
     flex: 1,
     gap: LINE,
@@ -297,7 +413,7 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     gap: LINE,
-    minHeight: 56,
+    minHeight: KEY_HEIGHT,
   },
   doneButton: {
     alignSelf: 'center',

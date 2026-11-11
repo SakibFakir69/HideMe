@@ -45,7 +45,8 @@ Perf / polish punch list. Ordered by impact.
 
 ## Later
 
-- [ ] Instrument startup/unlock timing on release builds.
+- [x] Instrument startup/unlock timing on release builds — the marks show up in
+      Settings → Performance.
 - [x] Exclude `files/vault/` from Android backup — the vault directory and the
       SecureStore preferences are excluded from cloud backup and device-to-
       device transfer (`plugins/with-vault-backup.js`).

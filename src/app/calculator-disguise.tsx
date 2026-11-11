@@ -9,6 +9,7 @@ import { ThemedView } from '@/components/themed-view';
 import { Fonts, MaxContentWidth, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { evaluateExpression, formatResult } from '@/lib/calc-engine';
+import { mark } from '@/lib/perf';
 import {
   MAX_CODE_LENGTH,
   MIN_CODE_LENGTH,
@@ -196,6 +197,7 @@ export default function CalculatorDisguiseScreen() {
         }
 
         verifyingRef.current = true;
+        mark('unlock.start');
         try {
           const masterKey = await unlockWithSecretCode(code);
           if (masterKey === null) {
@@ -213,6 +215,7 @@ export default function CalculatorDisguiseScreen() {
           lockoutRef.current = null;
           navigatingRef.current = true;
           unlock(masterKey);
+          mark('unlock.done');
           router.replace('/unlock-success');
         } finally {
           verifyingRef.current = false;

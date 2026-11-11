@@ -235,7 +235,10 @@ so the stored record alone cannot be brute-forced cheaply and never contains the
 
 ### P2 — hardening & ops
 
-- Instrument startup/unlock timing on release builds (target: perceived instant).
+- ~~Instrument startup/unlock timing on release builds~~ — done: `lib/perf.ts`
+  records the marks (app ready, unlock start/done, index loaded, setup done)
+  and Settings → Performance shows them, so a release build can be measured on
+  a real device where the debug logs are gone.
 - ~~Android backup~~ — done: `plugins/with-vault-backup.js` replaces the
   backup rules with a merged set that excludes the vault directory and the
   SecureStore preferences from both cloud backup and device-to-device

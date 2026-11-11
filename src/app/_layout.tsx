@@ -12,6 +12,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { initAds } from '@/lib/ads';
 import { syncPremiumFromStore } from '@/lib/iap';
+import { mark } from '@/lib/perf';
 import { loadPremium } from '@/lib/premium';
 import { initReminders } from '@/lib/reminders';
 import { loadThemePref, useThemePref } from '@/lib/theme-pref';
@@ -33,7 +34,11 @@ export default function RootLayout() {
   });
 
   useEffect(() => {
-    if (fontsLoaded || fontError) void SplashScreen.hideAsync().catch(() => {});
+    if (fontsLoaded || fontError) {
+      void SplashScreen.hideAsync().catch(() => {});
+      // The first frame the user actually sees.
+      mark('app.ready');
+    }
   }, [fontsLoaded, fontError]);
 
   useEffect(() => {

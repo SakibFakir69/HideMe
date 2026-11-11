@@ -2,6 +2,7 @@ import * as Crypto from 'expo-crypto';
 import { Directory, File, Paths } from 'expo-file-system';
 
 import { binEntries, expiredIds, isDeleted } from './vault-bin-core';
+import { mark } from './perf';
 import {
   INDEX_VERSION,
   isSupportedIndexVersion,
@@ -201,6 +202,8 @@ export async function loadIndex(masterKey: Uint8Array): Promise<VaultIndex> {
     folders: parsed.folders,
     items: parsed.items.map(normalizeItem),
   };
+  // The index is read once per session — this is the "vault ready" moment.
+  mark('index.loaded');
   return cachedIndex;
 }
 

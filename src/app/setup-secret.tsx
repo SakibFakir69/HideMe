@@ -18,6 +18,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BrandGradient, Fonts, MaxContentWidth, Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
+import { mark } from '@/lib/perf';
 import {
   MAX_CODE_LENGTH,
   MIN_CODE_LENGTH,
@@ -153,6 +154,7 @@ export default function SetupSecretScreen() {
         }
         if (cancelled) return;
         unlock(masterKey);
+        mark('setup.done');
         router.replace('/vault');
       },
       (error) => {

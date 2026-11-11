@@ -28,6 +28,7 @@ import { Fonts, Palette, Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { useVaultIndex } from '@/hooks/use-vault-index';
 import { getActiveAppIcon, type DisguiseIcon } from '@/lib/app-icon';
+import { clearMarks, formatMs, getMarks, type PerfMark } from '@/lib/perf';
 import { usePremium } from '@/lib/premium';
 import {
   REMINDER_TIME_LABEL,
@@ -85,6 +86,7 @@ export default function VaultSettingsScreen() {
   const [remindersOn, setRemindersOn] = useState(false);
   const [remindersBusy, setRemindersBusy] = useState(false);
   const [appIcon, setAppIcon] = useState<DisguiseIcon>(() => getActiveAppIcon());
+  const [perfMarks, setPerfMarks] = useState<PerfMark[]>(() => getMarks());
 
   useEffect(() => {
     let cancelled = false;
@@ -115,6 +117,7 @@ export default function VaultSettingsScreen() {
       void getAutoLockSeconds().then(setAutoLock);
       void getRemindersEnabled().then(setRemindersOn);
       setAppIcon(getActiveAppIcon());
+      setPerfMarks(getMarks());
     }, []),
   );
 
@@ -322,7 +325,32 @@ export default function VaultSettingsScreen() {
             <ListRow
               icon="speedometer-outline"
               title={`PBKDF2-SHA256 · ${PBKDF2_ROUNDS.toLocaleString('en-US')} rounds`}
-              subtitle="Native derivation on Android 8+"
+              subtitle="Native derivation on Android 8+ and iOS"
+            />
+          </Group>
+
+          <Group title="Performance">
+            {perfMarks.length === 0 ? (
+              <ListRow icon="stopwatch-outline" title="No timings yet" subtitle="Unlock the vault to record some" divider />
+            ) : (
+              perfMarks.map((entry, index) => (
+                <ListRow
+                  key={`${entry.name}-${index}`}
+                  icon="stopwatch-outline"
+                  title={entry.name}
+                  subtitle={formatMs(entry.at)}
+                  divider={index < perfMarks.length - 1}
+                />
+              ))
+            )}
+            <ListRow
+              icon="refresh-outline"
+              title="Clear timings"
+              subtitle="Start measuring again"
+              onPress={() => {
+                clearMarks();
+                setPerfMarks([]);
+              }}
             />
           </Group>
 

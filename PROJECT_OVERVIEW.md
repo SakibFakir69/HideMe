@@ -285,25 +285,32 @@ Ads and biometrics require a **development build** — Expo Go will not run the 
 
 ---
 
-## 9. Repository state (as of 2026-11-11)
+## 9. Repository state (as of 2026-11-12)
 
-The tree is clean. Recent commits:
+The tree is clean. Recent commits, newest first:
 
-- `1b1e3fc` — premium, launcher disguise, native PBKDF2 (Android), reminders, sharing.
-- `205d0e2` — redesign wave.
-- `5834a34` — first build done.
+| Commit | What |
+|---|---|
+| `3ac1db3` | Tests for the store's pure logic (`lib/vault-index-core.ts`) |
+| `f8426f2` | Startup / unlock timings, shown in Settings → Performance |
+| `80a8c39` | Setup-screen visual pass, biometric opt-in, recovery warning |
+| `35bd72b` | Audio kind, category, import row and player |
+| `ee47423` | Vault excluded from Android backups; iOS + EAS build config |
+| `d8273c1` | Swipe pager in the viewer, window-aware grid sizing |
+| `634d33d` | iOS native PBKDF2, instant-show grids, zoomable photo viewer |
+| `1b1e3fc` | Premium, launcher disguise, native PBKDF2 (Android), reminders, sharing |
+| `205d0e2` | Redesign wave |
 
-The latest wave (P0 performance pass) added:
-
-- **New:** `modules/vault-crypto/ios/` (CommonCrypto PBKDF2), `lib/crypto/pbkdf2.ts`
-  (+ known-answer tests), `components/vault/zoomable-image.tsx`.
-- **Modified:** `vault-secret.ts` (single derivation entry point, concurrent code change),
-  `setup-secret.tsx` (keep the first code on mismatch, digit counter, spinner),
-  `item-tile.tsx` (memoized with a field comparator), `thumbnail.tsx` (no render-time
-  filesystem stat, placeholder instead of spinner), `vault-store.ts` (separate thumbnail
-  decryption budget, pipelined import), the three grid screens (stable callbacks),
-  `_layout.tsx` (`GestureHandlerRootView`).
-
-Verified on this wave: `tsc --noEmit`, `expo lint`, 49/49 unit tests,
-`expo export --platform android` (2141 modules) and
+Verified after every wave: `tsc --noEmit`, `expo lint`, the unit tests
+(69 passing), `expo export --platform android`, `expo prebuild --platform
+android` (manifest and backup rules checked) and
 `gradlew :vault-crypto:compileDebugKotlin` (BUILD SUCCESSFUL).
+
+Still open, and why:
+
+| Item | Why it is open |
+|---|---|
+| Masonry / justified grid | DESIGN.md asks for a grid that keeps the real photo ratio. The current one is a uniform square crop; redesigning it blind (no device or emulator here to check it on) is riskier than it is worth |
+| Bulk share / export | `expo-sharing` shares a single file and the document picker cannot save to a user-chosen location. A multi-file export needs a zip dependency, which is a deliberate decision rather than an oversight |
+| Store-side receipt validation | The entitlement is local. The silent launch-time store sync covers reinstalls and device changes; server-side validation would need a backend |
+| Filesystem tests for the store | The pure decisions are extracted and covered; the remaining file calls need a fake |

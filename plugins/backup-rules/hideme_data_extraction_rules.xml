@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Android 12+ backup configuration.
+
+  The vault blobs are excluded from both cloud backup and device-to-device
+  transfer: they are encrypted, but the master key never leaves the device,
+  so a copied vault would be unreadable anyway. Excluding it also keeps the
+  user's file inventory off someone else's server.
+
+  The SecureStore preferences hold the master key and the secret record.
+  expo-secure-store installs the same exclusion; it is repeated here because
+  this file replaces (rather than extends) its rules.
+-->
+<data-extraction-rules>
+  <cloud-backup>
+    <exclude domain="file" path="vault/" />
+    <exclude domain="sharedpref" path="SecureStore" />
+  </cloud-backup>
+  <device-transfer>
+    <exclude domain="file" path="vault/" />
+    <exclude domain="sharedpref" path="SecureStore" />
+  </device-transfer>
+</data-extraction-rules>

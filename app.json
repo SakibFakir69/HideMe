@@ -24,6 +24,13 @@
       "output": "server",
       "favicon": "./assets/images/favicon.png"
     },
+    "ios": {
+      "bundleIdentifier": "com.sakibfakir.hideme",
+      "supportsTablet": true,
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    },
     "plugins": [
       "expo-router",
       [
@@ -34,6 +41,7 @@
           "imageWidth": 76
         }
       ],
+      "./plugins/with-vault-backup",
       "expo-secure-store",
       "expo-video",
       [

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Android 11 and lower backup configuration.
+
+  Mirrors hideme_data_extraction_rules.xml: the vault directory and the
+  SecureStore preferences (master key + secret record) stay off the backup.
+-->
+<full-backup-content>
+  <exclude domain="file" path="vault/" />
+  <exclude domain="sharedpref" path="SecureStore" />
+</full-backup-content>

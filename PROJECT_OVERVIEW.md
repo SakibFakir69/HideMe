@@ -210,11 +210,11 @@ so the stored record alone cannot be brute-forced cheaply and never contains the
    decryption budget, and import overlaps thumbnail building with the next file.
 4. ~~**"Instant show"**~~ — done: sized placeholder instead of a spinner, no filesystem
    stat during render, no layout jump when the thumbnail or the photo arrives.
-5. **Type/object sizing** — the grid re-measures on rotation and in
-   split-screen (`useGridColumns`), and the lists are constrained to
-   `MaxContentWidth` so the tiles fill their cells on wide displays. Still
-   open: the grid is a fixed square crop (`contentFit="cover"`), while
-   DESIGN.md asks for a responsive masonry grid that keeps the real ratio.
+5. **Type/object sizing** — the grid re-measures when the window changes size
+   (`useGridColumns`: multi-window, foldable, tablet split view), and the lists
+   are constrained to `MaxContentWidth` so the tiles fill their cells on wide
+   displays. Still open: the grid is a fixed square crop (`contentFit="cover"`),
+   while DESIGN.md asks for a responsive masonry grid that keeps the real ratio.
 6. **Viewer polish** — pinch zoom, double-tap zoom and drag-to-pan ship, and
    the viewer pages through the items the grid was showing. Still to add:
    document scroll.
@@ -233,9 +233,14 @@ so the stored record alone cannot be brute-forced cheaply and never contains the
 ### P2 — hardening & ops
 
 - Instrument startup/unlock timing on release builds (target: perceived instant).
-- Android backup: manifest has `allowBackup="true"` (SecureStore already has exclusion
-  rules, vault documents do not) — exclude `files/vault/` from backup or disable backup.
-- Add iOS build config + EAS profiles (`development`, `preview`, `production`).
+- ~~Android backup~~ — done: `plugins/with-vault-backup.js` replaces the
+  backup rules with a merged set that excludes the vault directory and the
+  SecureStore preferences from both cloud backup and device-to-device
+  transfer. The master key is device-bound, so a copied vault would be
+  unreadable anyway.
+- ~~iOS build config + EAS profiles~~ — done: `ios.bundleIdentifier`,
+  `supportsTablet` and `ITSAppUsesNonExemptEncryption` in `app.json`, plus
+  `eas.json` with `development` / `preview` / `production` profiles.
 - Add tests for `vault-store` import/bin lifecycle (needs a filesystem fake).
 - ~~Fix stale docs: `README.md` says PBKDF2 600k~~ — corrected to **210k** + native path note.
 

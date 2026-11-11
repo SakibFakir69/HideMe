@@ -21,11 +21,12 @@ Perf / polish punch list. Ordered by impact.
 - [x] **7. view show perfect way** — pinch-to-zoom, double-tap zoom and
       drag-to-pan in the photo viewer, with the photo clamped to the viewport,
       plus a swipe pager through the items the grid was showing.
-- [x] **4. fix all type object sizeing** — the grid re-measures on rotation
-      and in split-screen, and the list is actually constrained to
-      `MaxContentWidth` so the tiles fill their cells on wide displays. The
-      grid is still a fixed square crop (`contentFit="cover"`); DESIGN.md asks
-      for a responsive masonry grid that keeps the real ratio.
+- [x] **4. fix all type object sizeing** — the grid re-measures when the
+      window changes size (multi-window, foldable, tablet split view), and
+      the list is actually constrained to `MaxContentWidth` so the tiles fill
+      their cells on wide displays. The grid is still a fixed square crop
+      (`contentFit="cover"`); DESIGN.md asks for a responsive masonry grid
+      that keeps the real ratio.
 
 ## Open
 
@@ -40,8 +41,10 @@ Perf / polish punch list. Ordered by impact.
 ## Later
 
 - [ ] Instrument startup/unlock timing on release builds.
-- [ ] Exclude `files/vault/` from Android backup (manifest has `allowBackup="true"`).
-- [ ] iOS build config + EAS profiles (`development`, `preview`, `production`).
+- [x] Exclude `files/vault/` from Android backup — the vault directory and the
+      SecureStore preferences are excluded from cloud backup and device-to-
+      device transfer (`plugins/with-vault-backup.js`).
+- [x] iOS build config + EAS profiles (`development`, `preview`, `production`).
 
 <!-- complete reamining part -->
 <!-- after this work on ui ux -->

@@ -58,6 +58,10 @@ npx expo lint           # eslint
 npx tsc --noEmit        # typecheck
 npx expo export -p web  # static web export
 node --test src/lib/crypto/envelope.test.ts   # crypto unit tests
+
+npx eas-cli build --profile development   # dev client (internal)
+npx eas-cli build --profile preview       # release APK (internal)
+npx eas-cli build --profile production    # store build
 ```
 
 ## Project layout

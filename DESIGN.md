@@ -190,7 +190,7 @@ Root Stack
 - Video: never autoplays — first frame + "Tap to play", then native controls with fullscreen.
 - Document: centred card with type icon, size/date and **Open document** (system preview sheet).
 - Decryption owns the whole stage: percentage, pass label (verify → decrypt) and a thin progress bar.
-- Header: filename + pager `1/5` with swipe (still pending, P2).
+- Header: filename + pager `1/5` with swipe.
 - Share/Delete live in the More sheet (Delete = move to bin); a persistent bottom bar (Share · Delete ·
   More) is still pending, P2.
 

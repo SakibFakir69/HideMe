@@ -43,6 +43,25 @@ Perf / polish punch list. Ordered by impact.
       Keychain/Keystore slot while the master key is in memory.
 - [ ] Store-side purchase verification (entitlement is local for now).
 
+### Gaps against DESIGN.md
+
+- [ ] **Import progress is not cancelable** (§5.5 says it should be). The
+      import has to stop mid-batch and clean up the partial blobs.
+- [ ] **Import completion summary** (§5.5) — a toast or summary of what was
+      added.
+- [ ] **Import source rows** (§5.5 lists four: Photos & Videos / Documents /
+      Audio / Other Files — the app has three, "Other Files" is merged into
+      Documents).
+- [ ] **Import from the camera** — the row said "From gallery or camera"; only
+      the photo library is offered (the copy now says so).
+- [ ] **Erase-all with a typed confirmation** (§5.6) — it is a two-button
+      alert today.
+- [ ] **Share in select mode** (§5.11 wants Share · Delete · More) — blocked on
+      the bulk export above.
+- [ ] **Persistent bottom bar in the file preview** (§5.10, Share · Delete ·
+      More) — the actions live in the More sheet today.
+- [ ] **Loading skeletons** (§5.3) — the grids show a spinner instead.
+
 ## Later
 
 - [x] Instrument startup/unlock timing on release builds — the marks show up in

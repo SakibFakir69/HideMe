@@ -165,7 +165,7 @@ so the stored record alone cannot be brute-forced cheaply and never contains the
 | Lockout | 3 free attempts → exponential backoff (15s…15min), survives restart |
 | Auto-lock | Immediately / 30s / 1min / 5min, configurable; rewarded-ad pause sheet (§5.7) grants 1h, free for premium |
 | Privacy | Screenshot blocking + app-switcher shield while unlocked; restored for the gate |
-| Import | Photos/videos (gallery or camera), documents, other files; per-file progress, cancelable |
+| Import | Photos/videos (photo library), audio, documents & other files; per-file progress. The progress modal is **not** cancelable yet |
 | Organization | Folders, rename, move, search (debounced), storage stats |
 | Viewers | Immersive black stage with tap-to-hide chrome; photos fit-to-screen with pinch-to-zoom, double-tap zoom and drag-to-pan (clamped to the viewport), swipe-pager through the list the grid was showing, video (`expo-video`, no autoplay, native controls + fullscreen, pauses when swiped away), documents open in the system preview sheet from a card; Share via the More sheet (`expo-sharing`) |
 | Deletion | Move to bin, restore, permanent delete, erase-all; 30-day auto-expiry |

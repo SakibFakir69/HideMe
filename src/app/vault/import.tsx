@@ -32,7 +32,7 @@ export default function ImportScreen() {
               icon="images"
               iconColor="#8B5CF6"
               title="Photos & Videos"
-              subtitle="From gallery or camera"
+              subtitle="From your photo library"
               divider
               disabled={busy}
               onPress={() => void importAssets('media', null)}

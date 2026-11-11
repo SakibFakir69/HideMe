@@ -51,6 +51,8 @@ Perf / polish punch list. Ordered by impact.
       SecureStore preferences are excluded from cloud backup and device-to-
       device transfer (`plugins/with-vault-backup.js`).
 - [x] iOS build config + EAS profiles (`development`, `preview`, `production`).
+- [ ] Tests for the store's filesystem calls (needs a filesystem fake; the
+      pure parts are covered already).
 
 <!-- complete reamining part -->
 <!-- after this work on ui ux -->

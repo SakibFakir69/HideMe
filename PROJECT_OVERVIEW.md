@@ -178,7 +178,7 @@ so the stored record alone cannot be brute-forced cheaply and never contains the
 | Launcher disguise | Calculator / Notes / Photos / Weather / Music aliases; hide-all mode; dial-code restore |
 | Ads | Banner (hidden in select mode), interstitial after unlock (max 1/24h) and after every 2nd import, rewarded auto-lock pause; all skipped for premium |
 | Audio | Own `audio` item kind, category tile, import row (audio-only picker), music icon in the grid and a player in the viewer (`expo-audio`, playback only — no mic permission) |
-| Quality | Pure-core unit tests (envelope, PBKDF2 known-answer vectors, item kinds + index migration, lockout, auto-lock, bin, ad cap) |
+| Quality | Pure-core unit tests (envelope, PBKDF2 known-answer vectors, item kinds + index migration, index search/stats, timings, lockout, auto-lock, bin, ad cap) |
 
 ### Partial
 
@@ -247,7 +247,10 @@ so the stored record alone cannot be brute-forced cheaply and never contains the
 - ~~iOS build config + EAS profiles~~ — done: `ios.bundleIdentifier`,
   `supportsTablet` and `ITSAppUsesNonExemptEncryption` in `app.json`, plus
   `eas.json` with `development` / `preview` / `production` profiles.
-- Add tests for `vault-store` import/bin lifecycle (needs a filesystem fake).
+- ~~Add tests for `vault-store` import/bin lifecycle (needs a filesystem fake)~~ —
+  partially done: the pure parts of the store (file extensions, search,
+  storage stats, import progress) moved into `lib/vault-index-core.ts` and are
+  covered by tests. The remaining filesystem calls need a fake.
 - ~~Fix stale docs: `README.md` says PBKDF2 600k~~ — corrected to **210k** + native path note.
 
 ---

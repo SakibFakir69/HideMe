@@ -2,6 +2,12 @@ import * as Crypto from 'expo-crypto';
 import { Directory, File, Paths } from 'expo-file-system';
 
 import { binEntries, expiredIds, isDeleted } from './vault-bin-core';
+import {
+  computeStats as computeStatsCore,
+  extFor as extForCore,
+  importFraction,
+  searchItems as searchItemsCore,
+} from './vault-index-core';
 import { mark } from './perf';
 import {
   INDEX_VERSION,
@@ -162,12 +168,7 @@ function normalizeItem(item: VaultItem): VaultItem {
 }
 
 function extFor(name: string, mime: string): string {
-  const dot = name.lastIndexOf('.');
-  if (dot > 0 && dot < name.length - 1) return name.slice(dot).toLowerCase();
-  if (mime === 'image/jpeg') return '.jpg';
-  if (mime === 'image/png') return '.png';
-  if (mime === 'application/pdf') return '.pdf';
-  return '';
+  return extForCore(name, mime);
 }
 
 /* ------------------------------------------------------------------ */
@@ -316,7 +317,7 @@ export async function importAssets(opts: ImportOptions): Promise<VaultItem[]> {
         fileCount: assets.length,
         processed: p.processed,
         fileBytes: p.total,
-        fraction: assets.length === 0 ? 1 : (i + (p.total > 0 ? p.processed / p.total : 0)) / assets.length,
+        fraction: importFraction(i, assets.length, p.total > 0 ? p.processed / p.total : 0),
       });
     let size = 0;
     try {
@@ -511,17 +512,7 @@ export interface SearchResult {
 }
 
 export function searchItems(index: VaultIndex, rawQuery: string, folderId?: string | null): VaultItem[] {
-  const scope = folderId === undefined ? null : folderId;
-  const q = rawQuery.trim().toLowerCase();
-  const scopeItems = index.items.filter(
-    (it) => !isDeleted(it) && (scope === null || it.folderId === scope),
-  );
-  if (!q) return scopeItems;
-  return scopeItems.filter((item) => {
-    if (item.name.toLowerCase().includes(q)) return true;
-    const folder = getFolder(index, item.folderId);
-    return folder !== null && folder.name.toLowerCase().includes(q);
-  });
+  return searchItemsCore(index.items, rawQuery, index.folders, folderId);
 }
 
 export interface StorageStats {
@@ -531,14 +522,7 @@ export interface StorageStats {
 }
 
 export function computeStats(index: VaultIndex): StorageStats {
-  let totalBytes = 0;
-  let itemCount = 0;
-  for (const item of index.items) {
-    if (isDeleted(item)) continue;
-    itemCount++;
-    totalBytes += item.size;
-  }
-  return { itemCount, folderCount: index.folders.length, totalBytes };
+  return computeStatsCore(index.items, index.folders.length);
 }
 
 export async function eraseAllContents(masterKey: Uint8Array): Promise<void> {

@@ -568,11 +568,38 @@ function clearInflight(itemId: string): void {
   inflightDecrypts.delete(itemId);
 }
 
+let plaintextHolders = 0;
+let plaintextPurgeDeferred = false;
+
 export function purgeTempPlaintext(): void {
+  // A share sheet may still be reading the file from another app: the lock
+  // still happens, but deletion waits until the share returns.
+  if (plaintextHolders > 0) {
+    plaintextPurgeDeferred = true;
+    return;
+  }
   inflightDecrypts.clear();
   inflightThumbs.clear();
   const tmp = tmpDir();
   if (tmp.exists) tmp.delete();
+}
+
+/**
+ * Pins the decrypted cache for the lifetime of a cross-app handoff (sharing).
+ * Releasing replays a purge that a lock requested in the meantime.
+ */
+export function holdPlaintextPurge(): () => void {
+  plaintextHolders += 1;
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    plaintextHolders = Math.max(0, plaintextHolders - 1);
+    if (plaintextHolders === 0 && plaintextPurgeDeferred) {
+      plaintextPurgeDeferred = false;
+      purgeTempPlaintext();
+    }
+  };
 }
 
 /* ------------------------------------------------------------------ */

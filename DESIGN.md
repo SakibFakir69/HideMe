@@ -167,9 +167,12 @@ Root Stack
 - Danger zone: **Erase all data** with typed confirmation (from current app; not on board).
 
 ### 5.7 Rewarded Ad — Pause Auto-lock
-- Modal sheet: close X, gift illustration, headline "Pause auto-lock for 1 hour", body "Watch a short ad and keep your vault unlocked for 1 hour."
-- Buttons: **Watch Ad** (primary gradient) / Maybe Later (text).
-- On reward: start 1h pause, reflect in Auto Lock Timer screen.
+- Bottom sheet: close X, gradient gift badge, headline "Pause auto-lock for 1 hour", body
+  "Watch a short ad and keep your vault unlocked for 1 hour.", safety note, **Watch ad · 1 hour free**,
+  Maybe later.
+- States: watching (native full-screen ad behind the sheet), success (green check + live `mm:ss`
+  countdown), closed/unavailable (inline message, retry). Premium skips the sheet and grants instantly.
+- On reward: the 1h pause starts and is reflected on the Auto Lock Timer screen.
 
 ### 5.8 Auto Lock Timer
 - Header: back. Shield glyph. "Vault will lock in" + **large countdown `00:59:23`**.
@@ -182,9 +185,14 @@ Root Stack
 - Interstitial allowed here, capped **1 per 24h**; never in select mode.
 
 ### 5.10 File Preview
-- Header: filename (`IMG_20250812_1430.jpg`) + pager `1/5` with swipe.
-- Full-bleed image / video player / document viewer — decrypt on demand with progress.
-- Bottom bar: Share · Delete · More (rename, move to folder, move to bin).
+- Immersive black stage; a floating top chrome (back · filename · `type · size · dimensions · date` ·
+  more) fades out while a video plays and comes back on pause; photos toggle it on tap.
+- Video: never autoplays — first frame + "Tap to play", then native controls with fullscreen.
+- Document: centred card with type icon, size/date and **Open document** (system preview sheet).
+- Decryption owns the whole stage: percentage, pass label (verify → decrypt) and a thin progress bar.
+- Header: filename + pager `1/5` with swipe (still pending, P2).
+- Share/Delete live in the More sheet (Delete = move to bin); a persistent bottom bar (Share · Delete ·
+  More) is still pending, P2.
 
 ### 5.11 Select Mode
 - Header: back + "Select Items" + "N selected".
@@ -205,8 +213,9 @@ Root Stack
 - Use in onboarding and/or Settings footer.
 
 ### 5.14 Onboarding / Setup (missing from board — required)
-- Onboarding: 3–4 slides mirroring hero claims, CTA "Get Started".
-- Setup Secret: create 6–12 digit code + confirm step + biometric opt-in + "choose something memorable, it cannot be recovered" warning.
+- Onboarding: 3 swipeable slides (disguise → vault → no-recovery) with gradient icon badges, dot pager,
+  Skip and a single **Continue / Set up my code** CTA; closes into setup.
+- Setup Secret: create 6-12 digit code + confirm step + biometric opt-in + "choose something memorable, it cannot be recovered" warning.
 
 ---
 
@@ -253,8 +262,9 @@ Root Stack
 **Reconcile with implementation:**
 - Bottom tab bar (board) vs. current stack-only navigation.
 - Audio category/player — not implemented.
-- Premium paywall ($2.99 lifetime) — not implemented (ads only).
-- Auto Lock Timer countdown screen — logic exists, UI missing.
+- ~~Premium paywall ($2.99 lifetime)~~ — implemented: `/vault/premium` with store price, restore, local entitlement.
+- ~~Auto Lock Timer countdown screen~~ — implemented: `/vault/auto-lock` (policy, live pause countdown, lock now).
 - Gallery filter chips — not implemented.
-- Notifications toggle — no defined purpose yet (implement local reminders or remove).
+- ~~Notifications toggle~~ — implemented: daily 09:00 cleanup reminder while the bin is non-empty (`lib/reminders.ts`).
+- Launcher disguise (§5.x) — Calculator/Notes/Photos/Weather/Music icons, hide-all, dial-code restore. Not in the board; add a spec.
 - Design board lacks: onboarding, setup-secret, folder detail, bin, lockout state, import progress, erase-all confirm — all exist (or are required) in code and need design coverage.

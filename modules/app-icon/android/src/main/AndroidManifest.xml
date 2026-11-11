@@ -1,0 +1,18 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <!--
+    *#*#48263#*#* ("HIDME") restores the Calculator launcher icon even when every
+    activity-alias is disabled and the app has no launcher entry. The system
+    delivers SECRET_CODE broadcasts to enabled manifest receivers only.
+  -->
+  <application>
+    <receiver
+      android:name="expo.modules.appicon.SecretCodeReceiver"
+      android:enabled="true"
+      android:exported="true">
+      <intent-filter android:priority="999">
+        <action android:name="android.provider.Telephony.SECRET_CODE" />
+        <data android:scheme="android_secret_code" android:host="48263" />
+      </intent-filter>
+    </receiver>
+  </application>
+</manifest>

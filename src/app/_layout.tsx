@@ -9,6 +9,9 @@ import { useEffect } from 'react';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { initAds } from '@/lib/ads';
+import { syncPremiumFromStore } from '@/lib/iap';
+import { loadPremium } from '@/lib/premium';
+import { initReminders } from '@/lib/reminders';
 import { loadThemePref, useThemePref } from '@/lib/theme-pref';
 import { startAutoLockWatcher } from '@/lib/vault-autolock';
 
@@ -33,7 +36,12 @@ export default function RootLayout() {
 
   useEffect(() => {
     startAutoLockWatcher();
-    initAds();
+    // Load the local entitlement, reconcile it with the store (restores after
+    // a reinstall), then start ads so premium users never initialise the SDK.
+    void loadPremium()
+      .then(() => syncPremiumFromStore())
+      .then(() => initAds());
+    void initReminders();
     void loadThemePref();
   }, []);
 
@@ -43,6 +51,7 @@ export default function RootLayout() {
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="calculator-disguise" />
+        <Stack.Screen name="unlock-success" />
         <Stack.Screen name="onboarding" />
         <Stack.Screen name="setup-secret" />
         <Stack.Screen name="vault" />

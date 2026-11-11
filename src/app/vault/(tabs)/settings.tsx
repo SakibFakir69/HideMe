@@ -1,12 +1,16 @@
 import { Ionicons } from '@expo/vector-icons';
+import Constants from 'expo-constants';
 import * as LocalAuthentication from 'expo-local-authentication';
-import { router } from 'expo-router';
+import { LinearGradient } from 'expo-linear-gradient';
+import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import {
   Alert,
+  Pressable,
   ScrollView,
   StyleSheet,
   Switch,
+  Text,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -17,40 +21,33 @@ import { ChangeCodeModal } from '@/components/vault/change-code-modal';
 import { confirmDestructive } from '@/components/vault/confirm';
 import { formatBytes } from '@/components/vault/format';
 import { ThemedView } from '@/components/themed-view';
-import { ScreenHeader } from '@/components/ui/screen-header';
-import { SectionTitle } from '@/components/ui/section-title';
 import { ListRow } from '@/components/ui/list-row';
-import { AUTO_LOCK_PAUSE_MS } from '@/constants/ads';
-import { Palette, Radius, Spacing } from '@/constants/theme';
+import { ScreenHeader } from '@/components/ui/screen-header';
+import { PREMIUM_FALLBACK_PRICE } from '@/constants/premium';
+import { Fonts, Palette, Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { useVaultIndex } from '@/hooks/use-vault-index';
-import { showRewardedAd } from '@/lib/ads';
+import { getActiveAppIcon, type DisguiseIcon } from '@/lib/app-icon';
+import { usePremium } from '@/lib/premium';
+import {
+  REMINDER_TIME_LABEL,
+  getRemindersEnabled,
+  setRemindersEnabled,
+  syncBinReminder,
+} from '@/lib/reminders';
 import {
   setThemePref,
   useThemePref,
   type ThemePref,
 } from '@/lib/theme-pref';
-import {
-  AUTOLOCK_OPTIONS,
-  getAutoLockOverrideUntil,
-  getAutoLockSeconds,
-  grantAutoLockPause,
-  setAutoLockSeconds,
-  type AutoLockSeconds,
-} from '@/lib/vault-autolock';
+import { getAutoLockSeconds, type AutoLockSeconds } from '@/lib/vault-autolock';
 import { getMasterKey, lock } from '@/lib/vault-session';
 import { isBiometricAvailable, isBiometricEnabled, setBiometricEnabled, PBKDF2_ROUNDS } from '@/lib/vault-secret';
 import { computeStats, eraseAllContents, errorMessage } from '@/lib/vault-store';
 
-/** Long form for the picker sheet. */
-function describeAutoLock(seconds: AutoLockSeconds): string {
-  if (seconds === 0) return 'Immediately';
-  if (seconds < 60) return `After ${seconds} seconds`;
-  return `After ${seconds / 60} minute${seconds === 60 ? '' : 's'}`;
-}
-
 /** Compact trailing value, board style: "1 minute". */
-function shortAutoLock(seconds: AutoLockSeconds): string {
+function shortAutoLock(seconds: AutoLockSeconds | null): string {
+  if (seconds === null) return '…';
   if (seconds === 0) return 'Immediately';
   if (seconds < 60) return `${seconds} sec`;
   return `${seconds / 60} minute${seconds === 60 ? '' : 's'}`;
@@ -62,9 +59,21 @@ const THEME_LABEL: Record<ThemePref, string> = {
   dark: 'Dark',
 };
 
+const ICON_LABEL: Record<DisguiseIcon, string> = {
+  calculator: 'Calculator',
+  notes: 'Notes',
+  photos: 'Photos',
+  weather: 'Weather',
+  music: 'Music',
+  hidden: 'Hidden',
+};
+
+const APP_VERSION = Constants.expoConfig?.version ?? '1.0.0';
+
 export default function VaultSettingsScreen() {
   const theme = useTheme();
   const themePref = useThemePref();
+  const premium = usePremium();
   const { index, refresh } = useVaultIndex();
   const [biometricAvailable, setBiometricAvailable] = useState(false);
   const [biometricOn, setBiometricOn] = useState(false);
@@ -72,66 +81,66 @@ export default function VaultSettingsScreen() {
   const [changingCode, setChangingCode] = useState(false);
   const [erasing, setErasing] = useState(false);
   const [autoLock, setAutoLock] = useState<AutoLockSeconds | null>(null);
-  const [autoLockSheet, setAutoLockSheet] = useState(false);
   const [themeSheet, setThemeSheet] = useState(false);
-  const [rewardBusy, setRewardBusy] = useState(false);
-  const [pauseLabel, setPauseLabel] = useState<string | null>(null);
-
-  const refreshPauseLabel = useCallback(() => {
-    const until = getAutoLockOverrideUntil();
-    if (until > Date.now()) {
-      const at = new Date(until);
-      setPauseLabel(
-        `Active — resumes at ${at.getHours()}:${String(at.getMinutes()).padStart(2, '0')}`,
-      );
-    } else {
-      setPauseLabel(null);
-    }
-  }, []);
+  const [remindersOn, setRemindersOn] = useState(false);
+  const [remindersBusy, setRemindersBusy] = useState(false);
+  const [appIcon, setAppIcon] = useState<DisguiseIcon>(() => getActiveAppIcon());
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all([isBiometricAvailable(), isBiometricEnabled(), getAutoLockSeconds()]).then(
-      ([available, enabled, autoLockSeconds]) => {
+    Promise.all([isBiometricAvailable(), isBiometricEnabled(), getAutoLockSeconds(), getRemindersEnabled()]).then(
+      ([available, enabled, autoLockSeconds, remindersEnabled]) => {
         if (!cancelled) {
           setBiometricAvailable(available);
           setBiometricOn(enabled);
           setAutoLock(autoLockSeconds);
-          refreshPauseLabel();
+          setRemindersOn(remindersEnabled);
         }
       },
     );
     return () => {
       cancelled = true;
     };
-  }, [refreshPauseLabel]);
+  }, []);
 
   const stats = index ? computeStats(index) : null;
+  const binCount = index
+    ? index.items.filter((item) => item.deletedAt !== undefined).length
+    : 0;
 
-  const onWatchAd = useCallback(async () => {
-    if (rewardBusy) return;
-    setRewardBusy(true);
-    try {
-      const result = await showRewardedAd();
-      if (result === 'earned') {
-        const until = await grantAutoLockPause(AUTO_LOCK_PAUSE_MS);
-        const at = new Date(until);
-        setPauseLabel(
-          `Active — resumes at ${at.getHours()}:${String(at.getMinutes()).padStart(2, '0')}`,
-        );
-        Alert.alert(
-          'Auto-lock paused',
-          'Timed auto-lock is off for the next hour. "Lock now" and the "Immediately" setting still lock the vault.',
-        );
-      } else if (result === 'closed') {
-        Alert.alert('No reward', 'Watch the full ad to earn the auto-lock pause.');
-      } else {
-        Alert.alert('Ad not ready', 'The reward ad is still loading — try again in a few seconds.');
+  // The auto-lock, icon and paywall screens can change these while Settings
+  // stays mounted in the tab stack; refresh on focus so values never go stale.
+  useFocusEffect(
+    useCallback(() => {
+      void getAutoLockSeconds().then(setAutoLock);
+      void getRemindersEnabled().then(setRemindersOn);
+      setAppIcon(getActiveAppIcon());
+    }, []),
+  );
+
+  const toggleReminders = useCallback(
+    async (value: boolean) => {
+      if (remindersBusy) return;
+      setRemindersBusy(true);
+      try {
+        const applied = await setRemindersEnabled(value);
+        if (value && !applied) {
+          setRemindersOn(false);
+          Alert.alert(
+            'Notifications are off',
+            'Allow notifications for this app in system settings, then turn the reminder on again.',
+          );
+          return;
+        }
+        setRemindersOn(value);
+        // Enabling must take effect immediately, not on the next index change.
+        await syncBinReminder(value ? binCount : 0);
+      } finally {
+        setRemindersBusy(false);
       }
-    } finally {
-      setRewardBusy(false);
-    }
-  }, [rewardBusy]);
+    },
+    [binCount, remindersBusy],
+  );
 
   const toggleBiometric = useCallback(
     async (value: boolean) => {
@@ -183,9 +192,10 @@ export default function VaultSettingsScreen() {
           <ScreenHeader title="Settings" onBack={() => router.back()} />
         </View>
 
-        <ScrollView contentContainerStyle={styles.content}>
-          <SectionTitle label="Security" />
-          <Card>
+        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+          <PremiumCard active={premium.active} onPress={() => router.push('/vault/premium')} />
+
+          <Group title="Security">
             <ListRow
               icon="key-outline"
               title="Change secret code"
@@ -210,50 +220,69 @@ export default function VaultSettingsScreen() {
                     value={biometricOn}
                     onValueChange={(next) => void toggleBiometric(next)}
                     disabled={biometricBusy}
-                    trackColor={{ true: Palette.primary }}
+                    trackColor={{ false: theme.backgroundSelected, true: Palette.primary }}
+                    thumbColor="#FFFFFF"
                   />
                 ) : undefined
               }
             />
             <ListRow
               icon="timer-outline"
-              title="Auto-lock"
-              value={autoLock !== null ? shortAutoLock(autoLock) : '…'}
+              title="Auto-lock timer"
+              subtitle="Countdown, policy and ad pause"
+              value={shortAutoLock(autoLock)}
               divider
-              onPress={() => setAutoLockSheet(true)}
-            />
-            <ListRow
-              icon="gift-outline"
-              title="Pause auto-lock for 1 hour"
-              subtitle={pauseLabel ?? 'Watch a short ad to earn it'}
-              divider
-              loading={rewardBusy}
-              disabled={rewardBusy}
-              onPress={() => void onWatchAd()}
+              onPress={() => router.push('/vault/auto-lock')}
             />
             <ListRow
               icon="lock-closed-outline"
               title="Lock now"
-              subtitle="Clears the key and encrypted cache"
+              subtitle="Clears the key and decrypted cache"
               onPress={() => {
                 lock();
                 router.replace('/calculator-disguise');
               }}
             />
-          </Card>
+          </Group>
 
-          <SectionTitle label="Appearance" />
-          <Card>
+          <Group title="Privacy & disguise">
+            <ListRow
+              icon="apps-outline"
+              title="App icon"
+              subtitle="What the launcher shows"
+              value={ICON_LABEL[appIcon]}
+              divider
+              onPress={() => router.push('/vault/app-icon')}
+            />
+            <ListRow
+              icon="notifications-outline"
+              title="Cleanup reminders"
+              subtitle={`Daily at ${REMINDER_TIME_LABEL}${
+                binCount > 0 ? ` · ${binCount} in Recently Deleted` : ' · only when the bin has items'
+              }`}
+              right={
+                <Switch
+                  value={remindersOn}
+                  onValueChange={(next) => void toggleReminders(next)}
+                  disabled={remindersBusy}
+                  trackColor={{ false: theme.backgroundSelected, true: Palette.primary }}
+                  thumbColor="#FFFFFF"
+                />
+              }
+            />
+          </Group>
+
+          <Group title="Appearance">
             <ListRow
               icon="contrast-outline"
               title="Theme"
+              subtitle="Match the system or pick one"
               value={THEME_LABEL[themePref]}
               onPress={() => setThemeSheet(true)}
             />
-          </Card>
+          </Group>
 
-          <SectionTitle label="Storage" />
-          <Card>
+          <Group title="Storage">
             {stats ? (
               <>
                 <ListRow
@@ -265,7 +294,7 @@ export default function VaultSettingsScreen() {
                 <ListRow
                   icon="pie-chart-outline"
                   title={formatBytes(stats.totalBytes)}
-                  subtitle="Total size of encrypted files"
+                  subtitle="Encrypted on this device"
                   divider
                 />
               </>
@@ -281,10 +310,9 @@ export default function VaultSettingsScreen() {
               disabled={erasing}
               onPress={() => void onErase()}
             />
-          </Card>
+          </Group>
 
-          <SectionTitle label="Encryption" />
-          <Card>
+          <Group title="Encryption">
             <ListRow
               icon="shield-checkmark-outline"
               title="AES-256-CTR + HMAC-SHA256"
@@ -294,35 +322,24 @@ export default function VaultSettingsScreen() {
             <ListRow
               icon="speedometer-outline"
               title={`PBKDF2-SHA256 · ${PBKDF2_ROUNDS.toLocaleString('en-US')} rounds`}
-              subtitle="Derives the key from your code"
+              subtitle="Native derivation on Android 8+"
             />
-          </Card>
+          </Group>
+
+          <Group title="About">
+            <ListRow
+              icon="information-circle-outline"
+              title="HideMe"
+              subtitle="No account, no cloud — everything stays here"
+              value={`v${APP_VERSION}`}
+            />
+          </Group>
 
           <AdBanner />
         </ScrollView>
       </SafeAreaView>
 
       <ChangeCodeModal visible={changingCode} onClose={() => setChangingCode(false)} />
-
-      <ActionSheetModal
-        visible={autoLockSheet}
-        title="Auto-lock"
-        actions={AUTOLOCK_OPTIONS.map((option) => ({
-          label: describeAutoLock(option),
-          icon: (
-            <Ionicons
-              name={autoLock === option ? 'radio-button-on' : 'radio-button-off'}
-              size={18}
-              color={autoLock === option ? Palette.primary : theme.text}
-            />
-          ),
-          onSelect: async () => {
-            setAutoLock(option);
-            await setAutoLockSeconds(option);
-          },
-        }))}
-        onClose={() => setAutoLockSheet(false)}
-      />
 
       <ActionSheetModal
         visible={themeSheet}
@@ -344,9 +361,49 @@ export default function VaultSettingsScreen() {
   );
 }
 
-function Card({ children }: { children: ReactNode }) {
+/** Board-style card: the section label lives inside the rounded container. */
+function Group({ title, children }: { title: string; children: ReactNode }) {
   const theme = useTheme();
-  return <View style={[styles.card, { backgroundColor: theme.backgroundElement }]}>{children}</View>;
+  return (
+    <View style={[styles.group, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}>
+      <View style={styles.groupHeader}>
+        <Text style={[styles.groupTitle, { color: theme.text }]}>{title}</Text>
+      </View>
+      {children}
+    </View>
+  );
+}
+
+/** Gold-on-indigo upgrade card (§ design board: "Keep your data safe"). */
+function PremiumCard({ active, onPress }: { active: boolean; onPress: () => void }) {
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={active ? 'Premium is active' : 'Upgrade to Premium'}
+      style={({ pressed }) => [styles.premiumWrap, pressed && styles.pressed]}>
+      <LinearGradient
+        colors={active ? ['#064E3B', '#065F46'] : ['#1E2A78', '#5B21B6']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.premiumCard}>
+        <View style={[styles.crownWrap, active && styles.crownWrapActive]}>
+          <Ionicons
+            name={active ? 'checkmark-circle' : 'ribbon'}
+            size={22}
+            color={active ? '#6EE7B7' : '#FBBF24'}
+          />
+        </View>
+        <View style={styles.flex}>
+          <Text style={[styles.premiumEyebrow, active && styles.premiumEyebrowActive]}>
+            {active ? 'Thank you for supporting HideMe' : `Keep your data safe · ${PREMIUM_FALLBACK_PRICE}`}
+          </Text>
+          <Text style={styles.premiumTitle}>{active ? 'Premium is active' : 'Upgrade to Premium'}</Text>
+        </View>
+        <Ionicons name="chevron-forward" size={18} color="rgba(255,255,255,0.75)" />
+      </LinearGradient>
+    </Pressable>
+  );
 }
 
 const styles = StyleSheet.create({
@@ -362,13 +419,74 @@ const styles = StyleSheet.create({
   },
   content: {
     paddingHorizontal: Spacing.three,
+    paddingTop: Spacing.two,
     paddingBottom: Spacing.six,
-    gap: Spacing.two,
-    paddingTop: Spacing.three,
   },
-  card: {
-    borderRadius: Radius.lg,
+  group: {
+    borderRadius: 18,
+    borderWidth: 1,
     overflow: 'hidden',
-    marginBottom: Spacing.three,
+    marginBottom: Spacing.two + Spacing.one,
+  },
+  groupHeader: {
+    paddingHorizontal: Spacing.three,
+    paddingTop: Spacing.three,
+    paddingBottom: Spacing.one,
+  },
+  groupTitle: {
+    fontFamily: Fonts.sansSemiBold,
+    fontSize: 14,
+    letterSpacing: 0.2,
+  },
+  premiumWrap: {
+    borderRadius: 18,
+    marginBottom: Spacing.two + Spacing.one,
+    shadowColor: '#6366F1',
+    shadowOpacity: 0.35,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 6,
+  },
+  premiumCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.three,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(129,140,248,0.45)',
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.three,
+  },
+  crownWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: Radius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(251,191,36,0.16)',
+  },
+  crownWrapActive: {
+    backgroundColor: 'rgba(110,231,183,0.16)',
+  },
+  premiumEyebrow: {
+    fontFamily: Fonts.sansSemiBold,
+    fontSize: 11,
+    letterSpacing: 0.2,
+    color: '#FBBF24',
+  },
+  premiumEyebrowActive: {
+    color: '#6EE7B7',
+  },
+  premiumTitle: {
+    fontFamily: Fonts.sansBold,
+    fontSize: 17,
+    color: '#FFFFFF',
+    marginTop: 1,
+  },
+  pressed: {
+    opacity: 0.85,
+  },
+  flex: {
+    flex: 1,
   },
 });

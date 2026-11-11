@@ -9,7 +9,6 @@ import { ThemedView } from '@/components/themed-view';
 import { Fonts, MaxContentWidth, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { evaluateExpression, formatResult } from '@/lib/calc-engine';
-import { maybeShowInterstitial } from '@/lib/ads';
 import {
   MAX_CODE_LENGTH,
   MIN_CODE_LENGTH,
@@ -214,8 +213,7 @@ export default function CalculatorDisguiseScreen() {
           lockoutRef.current = null;
           navigatingRef.current = true;
           unlock(masterKey);
-          router.replace('/vault');
-          void maybeShowInterstitial();
+          router.replace('/unlock-success');
         } finally {
           verifyingRef.current = false;
         }
@@ -261,7 +259,7 @@ export default function CalculatorDisguiseScreen() {
         if (!masterKey || navigatingRef.current) return;
         navigatingRef.current = true;
         unlock(masterKey);
-        router.replace('/vault');
+        router.replace('/unlock-success');
       } catch {
         // any failure just leaves the calculator usable
       } finally {

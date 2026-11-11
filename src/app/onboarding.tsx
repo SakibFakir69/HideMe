@@ -1,12 +1,23 @@
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
-import { useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { useCallback, useRef, useState } from 'react';
+import {
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  View,
+  useWindowDimensions,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
+  type ScrollViewInstance,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Fonts, Spacing } from '@/constants/theme';
+import { GradientButton } from '@/components/ui/gradient-button';
+import { BrandGradient, Fonts, Palette, Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { markOnboarded } from '@/lib/onboarding';
 
@@ -19,36 +30,72 @@ interface Page {
 const PAGES: Page[] = [
   {
     icon: 'calculator-outline',
-    title: 'Looks like a calculator',
-    body: 'It is one. A fully working calculator is the disguise — nobody peeking over your shoulder will find anything else.',
+    title: 'A calculator, nothing more',
+    body: 'It really is one — add, subtract, divide. Nobody glancing at your screen sees a vault.',
   },
   {
     icon: 'lock-closed-outline',
-    title: 'Your code opens a hidden vault',
-    body: 'Type your secret code into the calculator and it unlocks an encrypted vault for photos, videos and documents. Everything stays on this device.',
+    title: 'Your code opens the vault',
+    body: 'Type your secret code into the calculator to reveal an encrypted vault for photos, videos and documents. Everything stays on this device.',
   },
   {
     icon: 'warning-outline',
     title: 'There is no password reset',
-    body: 'Your files are encrypted with a key only your code can open. Lose the code and the files are unrecoverable — write it down somewhere safe.',
+    body: 'Files are encrypted with a key only your code can open. Lose the code and the files are unrecoverable — write it down somewhere safe.',
   },
 ];
 
 export default function OnboardingScreen() {
   const theme = useTheme();
+  const { width } = useWindowDimensions();
+  const scrollRef = useRef<ScrollViewInstance>(null);
   const [page, setPage] = useState(0);
-  const current = PAGES[page];
+
   const isLast = page === PAGES.length - 1;
 
-  const finish = () => {
+  const finish = useCallback(() => {
     void markOnboarded().finally(() => router.replace('/setup-secret'));
-  };
+  }, []);
+
+  const goTo = useCallback(
+    (index: number) => {
+      setPage(index);
+      scrollRef.current?.scrollTo({ x: index * width, animated: true });
+    },
+    [width],
+  );
+
+  const onNext = useCallback(() => {
+    if (isLast) {
+      finish();
+      return;
+    }
+    goTo(page + 1);
+  }, [finish, goTo, isLast, page]);
+
+  const onMomentumEnd = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      const index = Math.round(event.nativeEvent.contentOffset.x / Math.max(1, width));
+      const clamped = Math.min(PAGES.length - 1, Math.max(0, index));
+      setPage(clamped);
+    },
+    [width],
+  );
 
   return (
     <ThemedView style={styles.container}>
       <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
         <View style={styles.topRow}>
-          <View style={styles.spacer} />
+          <View style={styles.brand}>
+            <LinearGradient
+              colors={[...BrandGradient]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.brandBadge}>
+              <Ionicons name="lock-closed" size={14} color="#FFFFFF" />
+            </LinearGradient>
+            <ThemedText type="smallBold">HideMe</ThemedText>
+          </View>
           <Pressable
             onPress={finish}
             hitSlop={Spacing.two}
@@ -61,39 +108,60 @@ export default function OnboardingScreen() {
           </Pressable>
         </View>
 
-        <View style={styles.body}>
-          <View style={[styles.iconWrap, { backgroundColor: theme.backgroundElement }]}>
-            <Ionicons name={current.icon} size={40} color="#6366F1" />
-          </View>
-          <ThemedText type="title" style={styles.title}>
-            {current.title}
-          </ThemedText>
-          <ThemedText type="small" themeColor="textSecondary" style={styles.text}>
-            {current.body}
-          </ThemedText>
-        </View>
+        <ScrollView
+          ref={scrollRef}
+          horizontal
+          pagingEnabled
+          showsHorizontalScrollIndicator={false}
+          onMomentumScrollEnd={onMomentumEnd}
+          style={styles.pager}>
+          {PAGES.map((item) => (
+            <View key={item.title} style={[styles.slide, { width }]}>
+              <LinearGradient
+                colors={[...BrandGradient]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.iconBadge}>
+                <Ionicons name={item.icon} size={38} color="#FFFFFF" />
+              </LinearGradient>
+              <ThemedText type="title" style={styles.title}>
+                {item.title}
+              </ThemedText>
+              <ThemedText type="small" themeColor="textSecondary" style={styles.text}>
+                {item.body}
+              </ThemedText>
+            </View>
+          ))}
+        </ScrollView>
 
         <View style={styles.footer}>
           <View style={styles.dots}>
-            {PAGES.map((_, i) => (
-              <View
-                key={i}
-                style={[
-                  styles.dot,
-                  { backgroundColor: i === page ? '#6366F1' : theme.backgroundSelected },
-                ]}
-              />
+            {PAGES.map((item, index) => (
+              <Pressable
+                key={item.title}
+                onPress={() => goTo(index)}
+                hitSlop={Spacing.two}
+                accessibilityRole="button"
+                accessibilityLabel={`Go to page ${index + 1}`}>
+                <View
+                  style={[
+                    styles.dot,
+                    index === page
+                      ? [styles.dotActive, { backgroundColor: Palette.primary }]
+                      : { backgroundColor: theme.backgroundSelected },
+                  ]}
+                />
+              </Pressable>
             ))}
           </View>
-          <Pressable
-            onPress={() => (isLast ? finish() : setPage(page + 1))}
-            accessibilityRole="button"
-            accessibilityLabel={isLast ? 'Set up secret code' : 'Next'}
-            style={({ pressed }) => [styles.next, pressed && styles.pressed]}>
-            <ThemedText type="small" style={styles.nextText}>
-              {isLast ? 'Set up my code' : 'Next'}
-            </ThemedText>
-          </Pressable>
+          <GradientButton
+            label={isLast ? 'Set up my code' : 'Continue'}
+            onPress={onNext}
+            style={styles.cta}
+          />
+          <ThemedText type="small" themeColor="textSecondary" style={styles.hint}>
+            {isLast ? 'Takes about a minute.' : 'Swipe or tap continue.'}
+          </ThemedText>
         </View>
       </SafeAreaView>
     </ThemedView>
@@ -106,65 +174,92 @@ const styles = StyleSheet.create({
   },
   safeArea: {
     flex: 1,
-    paddingHorizontal: Spacing.four,
   },
   topRow: {
     flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: Spacing.four,
     paddingTop: Spacing.two,
+    paddingBottom: Spacing.two,
   },
-  spacer: {
-    flex: 1,
+  brand: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
+  },
+  brandBadge: {
+    width: 26,
+    height: 26,
+    borderRadius: Radius.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   skip: {
-    padding: Spacing.two,
+    paddingVertical: Spacing.one,
+    paddingHorizontal: Spacing.two,
   },
-  body: {
+  pager: {
+    flex: 1,
+  },
+  slide: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     gap: Spacing.three,
+    paddingHorizontal: Spacing.five,
   },
-  iconWrap: {
-    width: 88,
-    height: 88,
-    borderRadius: 44,
+  iconBadge: {
+    width: 84,
+    height: 84,
+    borderRadius: 28,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: Spacing.two,
+    shadowColor: Palette.primary,
+    shadowOpacity: 0.35,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 6,
   },
   title: {
-    fontSize: 22,
+    fontSize: 24,
+    lineHeight: 30,
     textAlign: 'center',
   },
   text: {
     textAlign: 'center',
-    lineHeight: 21,
-    maxWidth: 320,
+    lineHeight: 22,
+    fontSize: 15,
+    maxWidth: 340,
   },
   footer: {
     alignItems: 'center',
-    gap: Spacing.three,
-    paddingBottom: Spacing.four,
+    gap: Spacing.two,
+    paddingHorizontal: Spacing.four,
+    paddingBottom: Spacing.three,
   },
   dots: {
     flexDirection: 'row',
+    alignItems: 'center',
     gap: Spacing.one,
+    paddingVertical: Spacing.two,
   },
   dot: {
     width: 8,
     height: 8,
     borderRadius: 4,
   },
-  next: {
-    backgroundColor: '#6366F1',
-    borderRadius: Spacing.three,
-    paddingHorizontal: Spacing.six,
-    minHeight: 44,
-    justifyContent: 'center',
+  dotActive: {
+    width: 22,
   },
-  nextText: {
-    color: '#ffffff',
-    fontFamily: Fonts.sansBold,
+  cta: {
+    width: '100%',
+    maxWidth: 420,
+  },
+  hint: {
+    fontSize: 12,
+    fontFamily: Fonts.sans,
   },
   pressed: {
     opacity: 0.75,

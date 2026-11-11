@@ -5,7 +5,7 @@ import * as ImagePicker from 'expo-image-picker';
 
 import { errorMessage, importAssets, type ImportProgress, type PickedAsset } from '@/lib/vault-store';
 import { getMasterKey } from '@/lib/vault-session';
-import { maybeShowInterstitial } from '@/lib/ads';
+import { maybeShowImportInterstitial } from '@/lib/ads';
 
 export type ImportKind = 'media' | 'document';
 
@@ -45,7 +45,9 @@ export function useVaultImport(onImported?: () => Promise<void>) {
           onProgress: setProgress,
         });
         await onImported?.();
-        void maybeShowInterstitial();
+        // Every 2nd completed import shows an interstitial (separate from the
+        // once-per-24h unlock ad). Fire-and-forget: navigation must not wait.
+        void maybeShowImportInterstitial();
       } catch (error) {
         Alert.alert('Import failed', errorMessage(error));
       } finally {

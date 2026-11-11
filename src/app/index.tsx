@@ -4,6 +4,7 @@ import { ActivityIndicator, StyleSheet } from 'react-native';
 
 import { ThemedView } from '@/components/themed-view';
 import { hasOnboarded } from '@/lib/onboarding';
+import { purgeTempPlaintext } from '@/lib/vault-store';
 import { hasSecret } from '@/lib/vault-secret';
 
 /** A boot that never resolves is worse than the wrong screen. */
@@ -19,6 +20,10 @@ export default function Index() {
   useEffect(() => {
     let active = true;
     let timer: ReturnType<typeof setTimeout> | undefined;
+
+    // A cold start is always locked: drop any decrypted cache a killed session
+    // (or an interrupted share) left behind before routing anywhere.
+    purgeTempPlaintext();
 
     // SecureStore/Keystore can occasionally stall on a cold start (or on an
     // emulator without a secure lock screen). Falling back to the gate keeps

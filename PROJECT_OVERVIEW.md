@@ -57,18 +57,22 @@ src/app/
 ├── onboarding.tsx               first-run trust story
 ├── setup-secret.tsx             create 6–12 digit code (+ biometric opt-in)
 ├── calculator-disguise.tsx      the only "outside" screen · PIN entry + lockout UI
+├── unlock-success.tsx           confirmation after unlock · capped interstitial on continue
 └── vault/
-    ├── _layout.tsx              guard: redirects to gate unless unlocked · PrivacyShield
+    ├── _layout.tsx              guard: redirects to gate unless unlocked · PrivacyShield · bin reminder sync
     ├── (tabs)/
     │   ├── _layout.tsx          Home · Files · Gallery · Settings
     │   ├── index.tsx            Vault Home (categories, folders, search, FAB)
     │   ├── files.tsx            document list + search
     │   ├── gallery.tsx          media grid · All/Photos/Videos chips · multi-select
-    │   └── settings.tsx         security, appearance, storage, ads, erase
+    │   └── settings.tsx         premium, security, appearance, disguise, storage, ads, erase
     ├── folder/[id].tsx          folder contents
     ├── item/[id].tsx            photo / video / document viewer + actions
     ├── bin.tsx                  Recently Deleted (30-day retention)
-    └── import.tsx               import sources + progress
+    ├── import.tsx               import sources + progress
+    ├── premium.tsx              paywall · $2.99 lifetime · restore purchase
+    ├── auto-lock.tsx            threshold + live pause countdown + lock now
+    └── app-icon.tsx             launcher disguise picker + hide/restore
 ```
 
 **Guard rules:** the vault stack subscribes to the in-memory session
@@ -83,13 +87,16 @@ src/app/
 |---|---|---|
 | Crypto primitives | `lib/crypto/envelope.ts` | Pure, node-testable envelope: AES-256-CTR + HMAC-SHA256, per-file key wrapped with AES-256-GCM (AAD-bound to file id) |
 | File streaming | `lib/crypto/file-crypto.ts` | Chunked encrypt/decrypt with progress; encrypt-then-MAC; integrity verified **before** plaintext is released |
-| Secret / KEK | `lib/vault-secret.ts` | PBKDF2-SHA256 (**210k rounds**) → 64-byte DK: `[0:32]` verifier, `[32:64]` KEK that unwraps the master key |
+| Secret / KEK | `lib/vault-secret.ts` | PBKDF2-SHA256 (**210k rounds**) → 64-byte DK: `[0:32]` verifier, `[32:64]` KEK that unwraps the master key. Android 8+ derives via `modules/vault-crypto` (platform PBKDF2, ~1 s); JS fallback elsewhere produces identical bytes |
 | Session | `lib/vault-session.ts` | In-memory master key only; `lock()` zeroizes and runs cleanups; external store for React |
 | Storage | `lib/vault-store.ts` | Encrypted index + blobs, import pipeline, thumbnail cache, bin helpers |
 | Lockout | `lib/vault-lockout*.ts` | 3 free attempts, then 15s → 30s → … capped at 15 min; persisted across restarts |
-| Auto-lock | `lib/vault-autolock*.ts` | AppState watcher; Immediately / 30s / 1min / 5min; rewarded-ad pause (1h) |
+| Auto-lock | `lib/vault-autolock*.ts` | AppState watcher; Immediately / 30s / 1min / 5min; rewarded pause (1h) with live countdown screen |
+| Premium | `lib/premium.ts`, `lib/iap.ts` | Local entitlement in SecureStore + lazy `expo-iap` bridge (product `hideme_premium_lifetime`); gates ads and the pause |
+| Reminders | `lib/reminders.ts` | `expo-notifications` daily local nudge (09:00) while the bin is non-empty; generic text, no vault wording |
+| App icon | `modules/app-icon` + `plugins/with-launcher-disguise.js` | Five `activity-alias` disguises, hide mode, `*#*#48263#*#*` restore receiver |
 | Calculator | `lib/calc-engine.ts` | Safe expression evaluator for the disguise (no `eval`) |
-| Ads | `lib/ads.ts`, `constants/ads.ts` | Lazy AdMob init, interstitial cap (1 / 24h, persisted), rewarded reward grant |
+| Ads | Lazy AdMob init, unlock interstitial cap (1 / 24h, persisted), import interstitial every 2 imports (persisted counter), rewarded reward grant |
 | Design tokens | `constants/theme.ts`, `hooks/use-theme.ts`, `lib/theme-pref.ts` | Palette + light/dark/system preference |
 
 ### Storage layout (app-private sandbox)
@@ -137,15 +144,20 @@ so the stored record alone cannot be brute-forced cheaply and never contains the
 | PIN unlock | PBKDF2 210k → AES-256-GCM master-key wrap, constant-time verify |
 | Biometric unlock | Face ID / fingerprint; master key in Keychain/Keystore; enabled from Settings (with PIN confirmation)
 | Lockout | 3 free attempts → exponential backoff (15s…15min), survives restart |
-| Auto-lock | Immediately / 30s / 1min / 5min, configurable; rewarded ad pauses timed lock 1h |
+| Auto-lock | Immediately / 30s / 1min / 5min, configurable; rewarded-ad pause sheet (§5.7) grants 1h, free for premium |
 | Privacy | Screenshot blocking + app-switcher shield while unlocked; restored for the gate |
 | Import | Photos/videos (gallery or camera), documents, other files; per-file progress, cancelable |
 | Organization | Folders, rename, move, search (debounced), storage stats |
-| Viewers | Image (fit-to-screen), video (`expo-video`), document decrypted then opened in the system preview sheet |
+| Viewers | Immersive black stage with tap-to-hide chrome; photos fit-to-screen, video (`expo-video`, no autoplay, native controls + fullscreen), documents open in the system preview sheet from a card; Share via the More sheet (`expo-sharing`) |
 | Deletion | Move to bin, restore, permanent delete, erase-all; 30-day auto-expiry |
 | Gallery | Responsive grid, duration badges, All/Photos/Videos chips, multi-select + bulk actions |
-| Settings | Change code, biometric switch, auto-lock, theme (system/light/dark), storage, erase |
-| Ads | Banner (hidden in select mode), interstitial on unlock/import only (max 1/24h), rewarded auto-lock pause |
+| Settings | Change code, biometric switch, auto-lock timer, theme (system/light/dark), app icon, reminders, storage, erase |
+| Premium | $2.99 one-time (`hideme_premium_lifetime`), store-priced, restore purchase + silent launch-time store sync; removes banners/interstitials/rewarded ads and grants the 1h pause without an ad |
+| Unlock success | Animated confirmation after PIN/biometric; Continue → vault (+ interstitial, capped 1/24h); premium CTA |
+| Auto-lock timer | Dedicated screen: policy chips, live `mm:ss` pause countdown, pause/extend/end, lock now |
+| Reminders | Daily 09:00 local notification while the bin has items; generic lock-screen text; permission handled in Settings |
+| Launcher disguise | Calculator / Notes / Photos / Weather / Music aliases; hide-all mode; dial-code restore |
+| Ads | Banner (hidden in select mode), interstitial after unlock (max 1/24h) and after every 2nd import, rewarded auto-lock pause; all skipped for premium |
 | Quality | Pure-core unit tests (envelope, lockout, auto-lock, bin, ad cap) |
 
 ### Partial
@@ -153,20 +165,15 @@ so the stored record alone cannot be brute-forced cheaply and never contains the
 | Area | Gap |
 |---|---|
 | Audio | Import row folds audio into "Audio & other files"; no `audio` item kind, tile, or player |
-| Rewarded perk UX | Works via Settings button + system `Alert`; the designed modal sheet (§5.7) is missing |
-| Select mode | Bulk move/delete exist; **share** does not (no `expo-sharing` / RN `Share`) |
-| Onboarding | Screen exists (uncommitted) — needs copy/visual review against DESIGN.md §5.14 |
+| Bulk share | The viewer shares one file via the system sheet; select mode still lacks share/export (no zip/multi-file share) |
+| Onboarding | 3 swipeable slides with brand gradient badges, pager dots, skip and a single CTA; setup-secret still needs the same visual pass |
 
 ### Not built
 
 | Feature | Reference |
 |---|---|
-| Premium paywall ($2.99 lifetime, restore purchase) | DESIGN.md §5.12, §8 |
-| Auto-Lock Timer countdown screen (big `00:59:23`, paused badge, Lock Now) | DESIGN.md §5.8 — logic exists, UI missing |
-| Unlock Success screen ("Welcome back!" + interstitial slot) | DESIGN.md §5.9 |
-| Notifications toggle | Undecided purpose — implement local reminders or drop it |
 | App hiding / cloning (Gaia-style) | Competitor feature, out of current product scope |
-| Launcher icon disguise switching | Native work; currently one static "Calculator" icon |
+| Store-side purchase verification | Entitlement is local; no backend receipt validation yet |
 
 ---
 
@@ -175,24 +182,23 @@ so the stored record alone cannot be brute-forced cheaply and never contains the
 ### P0 — correctness & performance (from `roadmap.md`)
 
 1. **PIN setup flow** — make entering/confirming the code fast and simple (avoid re-derivation jank).
-2. **Faster crypto** — PBKDF2 210k on pure JS is slow on debug Hermes; profile release builds,
-   consider native PBKDF2 (`react-native-quick-crypto`) rather than lowering iterations.
+2. ~~**Faster crypto**~~ — solved by the local `vault-crypto` Expo module: Android 8+ uses the
+   platform PBKDF2 (native, ~1 s); iOS/web keep the JS fallback with identical output.
 3. **Import/grid lag** — commit `9cac511` fixed late decode/duplicate tiles; still tune concurrency
    and thumbnail cache (unbounded parallel pure-JS decrypt was the original cause).
 4. **"Instant show"** — eliminate layout flash on first paint of grids/viewers.
 5. **Type/object sizing** — audit prop types, image aspect ratios, and tile dimensions.
-6. **Viewer polish** — swipe pager, zoom, video controls, document scroll.
+6. **Viewer polish** — the player/viewer now has a black stage, tap-to-hide chrome, no autoplay,
+   fullscreen and a real document card; still to add: swipe pager, pinch zoom, document scroll.
 7. **Type/import cleanup** — remaining `any`/loose imports.
 
 ### P1 — design-complete screens
 
-1. Auto-Lock Timer screen (§5.8).
-2. Unlock Success screen (§5.9) with capped interstitial.
-3. Rewarded-ad bottom sheet (§5.7).
-4. Premium paywall (§5.12).
-5. Audio category + player (extend `ItemKind`, import, tile, viewer).
-6. Share/export for preview + select mode.
-7. Onboarding visual pass + setup-secret redesign.
+1. Audio category + player (extend `ItemKind`, import, tile, viewer).
+2. Bulk share/export in select mode (single-file share from the viewer now ships via `expo-sharing`).
+3. Setup-secret visual pass (onboarding slides are done: swipeable, gradient badges, dot pager).
+4. Premium receipt verification against the store (backend optional; the silent launch sync covers reinstall/device changes).
+5. Viewer swipe pager + pinch zoom.
 
 ### P2 — hardening & ops
 
@@ -201,7 +207,7 @@ so the stored record alone cannot be brute-forced cheaply and never contains the
   rules, vault documents do not) — exclude `files/vault/` from backup or disable backup.
 - Add iOS build config + EAS profiles (`development`, `preview`, `production`).
 - Add tests for `vault-store` import/bin lifecycle (needs a filesystem fake).
-- Fix stale docs: `README.md` says PBKDF2 **600k**, code uses **210k**.
+- ~~Fix stale docs: `README.md` says PBKDF2 600k~~ — corrected to **210k** + native path note.
 
 ---
 

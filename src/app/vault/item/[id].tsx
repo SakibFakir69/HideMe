@@ -1,29 +1,40 @@
 import { Ionicons } from '@expo/vector-icons';
-import { router, useLocalSearchParams } from 'expo-router';
+import { useEvent, useEventListener } from 'expo';
+import type { File } from 'expo-file-system';
 import { Image } from 'expo-image';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { LinearGradient } from 'expo-linear-gradient';
+import { router, useLocalSearchParams } from 'expo-router';
+import { VideoView, useVideoPlayer } from 'expo-video';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Animated,
   Pressable,
+  StatusBar,
   StyleSheet,
+  Text,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import type { File } from 'expo-file-system';
-import { VideoView, useVideoPlayer } from 'expo-video';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { ActionSheetModal } from '@/components/vault/action-sheet-modal';
+import { ActionSheetModal, type SheetAction } from '@/components/vault/action-sheet-modal';
 import { confirmDestructive } from '@/components/vault/confirm';
-import { formatBytes, formatDate } from '@/components/vault/format';
+import { formatBytes, formatDate, formatDuration } from '@/components/vault/format';
 import { NamePromptModal } from '@/components/vault/name-prompt-modal';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { Fonts, Spacing } from '@/constants/theme';
+import { Fonts, Palette, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { useVaultIndex } from '@/hooks/use-vault-index';
+import { shareVaultFile } from '@/lib/share';
 import { getMasterKey } from '@/lib/vault-session';
-import { decryptToCache, errorMessage, moveItemToBin, moveItemToFolder, renameItem, restoreItem } from '@/lib/vault-store';
+import {
+  decryptToCache,
+  errorMessage,
+  moveItemToBin,
+  moveItemToFolder,
+  renameItem,
+  restoreItem,
+} from '@/lib/vault-store';
 import type { VaultItem } from '@/lib/vault-store';
 
 type DecryptState =
@@ -31,8 +42,36 @@ type DecryptState =
   | { phase: 'ready'; file: File }
   | { phase: 'error'; message: string };
 
+const KIND_LABEL: Record<VaultItem['kind'], string> = {
+  photo: 'Photo',
+  video: 'Video',
+  document: 'Document',
+};
+
+/** "Photo · 2.4 MB · 0:42 · 1080×1920 · 12 Oct 2026" — one line of facts. */
+function describeItem(item: VaultItem): string {
+  const parts: string[] = [KIND_LABEL[item.kind], formatBytes(item.size)];
+  const duration = formatDuration(item.durationMs);
+  if (duration) parts.push(duration);
+  if (item.width && item.height) parts.push(`${item.width}×${item.height}`);
+  parts.push(formatDate(item.createdAt));
+  return parts.join('   ·   ');
+}
+
+function documentIcon(mime: string): keyof typeof Ionicons.glyphMap {
+  if (mime.includes('pdf')) return 'document-text-outline';
+  if (mime.includes('zip') || mime.includes('rar') || mime.includes('compressed')) {
+    return 'file-tray-full-outline';
+  }
+  if (mime.startsWith('audio/')) return 'musical-notes-outline';
+  if (mime.includes('sheet') || mime.includes('excel') || mime.includes('csv')) return 'grid-outline';
+  if (mime.includes('presentation') || mime.includes('powerpoint')) return 'easel-outline';
+  return 'document-outline';
+}
+
 export default function ItemScreen() {
   const theme = useTheme();
+  const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { index, loading, refresh } = useVaultIndex();
   const [decrypt, setDecrypt] = useState<DecryptState>({
@@ -43,6 +82,9 @@ export default function ItemScreen() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [moving, setMoving] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+  const [chromeShown, setChromeShown] = useState(true);
+  const [videoPlaying, setVideoPlaying] = useState(false);
   const percentRef = useRef(0);
   const lastPassRef = useRef<'verify' | 'decrypt'>('verify');
 
@@ -54,26 +96,25 @@ export default function ItemScreen() {
   if (item !== prevItem) {
     setPrevItem(item);
     setDecrypt({ phase: 'working', percent: 0, pass: 'verify' });
+    setChromeShown(true);
+    setVideoPlaying(false);
+    setAttempt(0);
   }
 
   useEffect(() => {
     if (!item) return;
     let cancelled = false;
     percentRef.current = 0;
-    decryptToCache(
-      getMasterKey(),
-      item,
-      ({ processed, total }) => {
-        if (cancelled || total <= 0) return;
-        const next = Math.floor((processed / total) * 100);
-        const pass: 'verify' | 'decrypt' = processed < total / 2 ? 'verify' : 'decrypt';
-        if (next !== percentRef.current || pass !== lastPassRef.current) {
-          percentRef.current = next;
-          lastPassRef.current = pass;
-          setDecrypt({ phase: 'working', percent: next, pass });
-        }
-      },
-    )
+    decryptToCache(getMasterKey(), item, ({ processed, total }) => {
+      if (cancelled || total <= 0) return;
+      const next = Math.floor((processed / total) * 100);
+      const pass: 'verify' | 'decrypt' = processed < total / 2 ? 'verify' : 'decrypt';
+      if (next !== percentRef.current || pass !== lastPassRef.current) {
+        percentRef.current = next;
+        lastPassRef.current = pass;
+        setDecrypt({ phase: 'working', percent: next, pass });
+      }
+    })
       .then((file) => {
         if (!cancelled) setDecrypt({ phase: 'ready', file });
       })
@@ -83,7 +124,46 @@ export default function ItemScreen() {
     return () => {
       cancelled = true;
     };
-  }, [item]);
+  }, [item, attempt]);
+
+  // While a video plays the chrome fades out; for photos it is tap-toggled.
+  const chromeVisible = item?.kind === 'video' ? !videoPlaying : chromeShown;
+  const chromeOpacity = useState(() => new Animated.Value(1))[0];
+
+  useEffect(() => {
+    Animated.timing(chromeOpacity, {
+      toValue: chromeVisible ? 1 : 0,
+      duration: 180,
+      useNativeDriver: true,
+    }).start();
+  }, [chromeOpacity, chromeVisible]);
+
+  const onRetry = useCallback(() => {
+    percentRef.current = 0;
+    lastPassRef.current = 'verify';
+    setDecrypt({ phase: 'working', percent: 0, pass: 'verify' });
+    setAttempt((value) => value + 1);
+  }, []);
+
+  const onShare = useCallback(
+    async (file: File) => {
+      if (!item) return;
+      const result = await shareVaultFile(file, {
+        name: item.name,
+        ext: item.ext,
+        mime: item.mime,
+      });
+      if (result === 'unavailable') {
+        Alert.alert(
+          'Sharing isn’t available',
+          'This build can’t open the system share sheet. Update the app and try again.',
+        );
+      } else if (result === 'failed') {
+        Alert.alert('Could not share', 'The file couldn’t be handed to another app.');
+      }
+    },
+    [item],
+  );
 
   const onDelete = useCallback(async () => {
     if (!item) return;
@@ -114,122 +194,147 @@ export default function ItemScreen() {
 
   if (!loading && !item) {
     return (
-      <ThemedView style={styles.container}>
-        <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
-          <Header title="File" onBack={() => router.back()} />
-          <View style={styles.centerBox}>
-            <ThemedText type="small" themeColor="textSecondary">
-              This file no longer exists.
-            </ThemedText>
+      <View style={styles.container}>
+        <StatusBar barStyle="light-content" />
+        <View style={[styles.missingHeader, { paddingTop: insets.top + Spacing.two }]}>
+          <RoundButton icon="chevron-back" label="Back" onPress={() => router.back()} />
+        </View>
+        <View style={styles.centerFill}>
+          <View style={styles.iconBadge}>
+            <Ionicons name="document-outline" size={28} color="rgba(255,255,255,0.75)" />
           </View>
-        </SafeAreaView>
-      </ThemedView>
+          <Text style={styles.stateTitle}>This file no longer exists</Text>
+          <Text style={styles.stateMessage}>It may have been deleted or purged from the bin.</Text>
+        </View>
+      </View>
     );
   }
 
-  return (
-    <ThemedView style={styles.container}>
-      <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
-        <Header
-          title={item?.name ?? 'File'}
-          onBack={() => router.back()}
-          onMore={item ? () => setMenuOpen(true) : undefined}
-        />
-
-        <View style={[styles.stage, { backgroundColor: theme.backgroundElement }]}>
-          {!item || decrypt.phase === 'working' ? (
-            <View style={styles.centerBox}>
-              <ActivityIndicator color={theme.textSecondary} />
-              {item && decrypt.phase === 'working' ? (
-                <>
-                  <View style={[styles.progressTrack, { backgroundColor: theme.backgroundSelected }]}>
-                    <View
-                      style={[
-                        styles.progressFill,
-                        { width: `${Math.max(2, decrypt.percent)}%` },
-                      ]}
-                    />
-                  </View>
-                  <ThemedText type="small" themeColor="textSecondary">
-                    {decrypt.percent === 0
-                      ? 'Preparing…'
-                      : decrypt.pass === 'verify'
-                        ? `Verifying integrity… ${decrypt.percent}%`
-                        : `Decrypting… ${decrypt.percent}%`}
-                  </ThemedText>
-                  <ThemedText type="code" themeColor="textSecondary" numberOfLines={1}>
-                    {item.name}
-                  </ThemedText>
-                </>
-              ) : (
-                <ThemedText type="small" themeColor="textSecondary">
-                  Loading…
-                </ThemedText>
-              )}
-            </View>
-          ) : decrypt.phase === 'error' ? (
-            <View style={styles.centerBox}>
-              <Ionicons name="alert-circle-outline" size={30} color="#EF4444" />
-              <ThemedText type="small" themeColor="textSecondary" style={styles.errorText}>
-                {decrypt.message}
-              </ThemedText>
-              <Pressable
-                onPress={() => router.back()}
-                style={({ pressed }) => [styles.smallButton, { backgroundColor: theme.backgroundSelected }, pressed && styles.pressed]}>
-                <ThemedText type="small">Go back</ThemedText>
-              </Pressable>
-            </View>
-          ) : item.kind === 'photo' ? (
-            <Image
-              source={{ uri: decrypt.file.uri }}
-              style={styles.image}
-              contentFit="contain"
-              transition={150}
-            />
-          ) : item.kind === 'video' ? (
-            <VideoPlayerView uri={decrypt.file.uri} />
-          ) : (
-            <DocumentView
-              item={item}
-              file={decrypt.file}
-              onOpenError={(message) => Alert.alert('Could not open document', message)}
-            />
-          )}
+  let stage: ReactNode;
+  if (!item) {
+    stage = (
+      <View style={styles.centerFill}>
+        <ActivityIndicator color="rgba(255,255,255,0.6)" />
+      </View>
+    );
+  } else if (decrypt.phase === 'working') {
+    stage = (
+      <DecryptProgress percent={decrypt.percent} pass={decrypt.pass} name={item.name} />
+    );
+  } else if (decrypt.phase === 'error') {
+    stage = (
+      <ErrorState
+        message={decrypt.message}
+        onRetry={onRetry}
+        onBack={() => router.back()}
+        retryable
+      />
+    );
+  } else if (item.kind === 'photo') {
+    stage = (
+      <Pressable
+        onPress={() => setChromeShown((visible) => !visible)}
+        accessibilityRole="image"
+        accessibilityLabel={`${item.name}. Tap to hide or show the controls.`}
+        style={StyleSheet.absoluteFill}>
+        <View style={styles.centerFill}>
+          <ActivityIndicator color="rgba(255,255,255,0.3)" />
         </View>
+        <Image
+          source={{ uri: decrypt.file.uri }}
+          style={StyleSheet.absoluteFill}
+          contentFit="contain"
+          transition={180}
+        />
+      </Pressable>
+    );
+  } else if (item.kind === 'video') {
+    stage = (
+      <VideoPlayerView
+        key={item.id}
+        uri={decrypt.file.uri}
+        onPlayingChange={setVideoPlaying}
+      />
+    );
+  } else {
+    stage = (
+      <DocumentView
+        item={item}
+        file={decrypt.file}
+        onOpenError={(message) => Alert.alert('Could not open document', message)}
+      />
+    );
+  }
 
-        {item && (
-          <View style={styles.meta}>
-            <ThemedText type="small" numberOfLines={1}>
-              {item.name}
-            </ThemedText>
-            <ThemedText type="code" themeColor="textSecondary">
-              {item.mime} · {formatBytes(item.size)} · {formatDate(item.createdAt)}
-            </ThemedText>
+  const menuActions: SheetAction[] = [
+    ...(item && decrypt.phase === 'ready'
+      ? [
+          {
+            label: 'Share',
+            icon: <Ionicons name="share-outline" size={18} color={theme.text} />,
+            onSelect: () => void onShare(decrypt.file),
+          },
+        ]
+      : []),
+    {
+      label: 'Rename',
+      icon: <Ionicons name="pencil-outline" size={18} color={theme.text} />,
+      onSelect: () => setRenaming(true),
+    },
+    {
+      label: 'Move to folder',
+      icon: <Ionicons name="folder-outline" size={18} color={theme.text} />,
+      onSelect: () => setMoving(true),
+    },
+    {
+      label: 'Move to bin',
+      destructive: true,
+      icon: <Ionicons name="trash-outline" size={18} color="#EF4444" />,
+      onSelect: () => void onDelete(),
+    },
+  ];
+
+  return (
+    <View style={styles.container}>
+      <StatusBar barStyle="light-content" />
+      <View style={styles.stage}>{stage}</View>
+
+      <Animated.View
+        pointerEvents={chromeVisible ? 'box-none' : 'none'}
+        style={[StyleSheet.absoluteFill, { opacity: chromeOpacity }]}>
+        <LinearGradient
+          colors={['rgba(0,0,0,0.92)', 'rgba(0,0,0,0.55)', 'rgba(0,0,0,0)']}
+          locations={[0, 0.58, 1]}
+          style={[styles.topScrim, { paddingTop: insets.top + Spacing.two }]}>
+          <View style={styles.headerRow}>
+            <RoundButton icon="chevron-back" label="Back" onPress={() => router.back()} />
+            <View style={styles.headerText}>
+              <Text style={styles.headerTitle} numberOfLines={1}>
+                {item?.name ?? 'File'}
+              </Text>
+              {item ? (
+                <Text style={styles.headerSubtitle} numberOfLines={1}>
+                  {describeItem(item)}
+                </Text>
+              ) : null}
+            </View>
+            {item ? (
+              <RoundButton
+                icon="ellipsis-horizontal"
+                label="File actions"
+                onPress={() => setMenuOpen(true)}
+              />
+            ) : (
+              <View style={styles.roundButton} />
+            )}
           </View>
-        )}
-      </SafeAreaView>
+        </LinearGradient>
+      </Animated.View>
 
       <ActionSheetModal
         visible={menuOpen}
         title={item?.name}
-        actions={[
-          {
-            label: 'Rename',
-            icon: <Ionicons name="pencil-outline" size={18} color={theme.text} />,
-            onSelect: () => setRenaming(true),
-          },
-          {
-            label: 'Move to folder',
-            icon: <Ionicons name="folder-outline" size={18} color={theme.text} />,
-            onSelect: () => setMoving(true),
-          },
-          {
-            label: 'Move to bin',
-            destructive: true,
-            icon: <Ionicons name="trash-outline" size={18} color="#EF4444" />,
-            onSelect: () => void onDelete(),
-          },
-        ]}
+        actions={menuActions}
         onClose={() => setMenuOpen(false)}
       />
 
@@ -253,7 +358,254 @@ export default function ItemScreen() {
         onClose={() => setMoving(false)}
         onChanged={refresh}
       />
-    </ThemedView>
+    </View>
+  );
+}
+
+/** Decryption is the first thing you see, so it gets the whole stage. */
+function DecryptProgress({
+  percent,
+  pass,
+  name,
+}: {
+  percent: number;
+  pass: 'verify' | 'decrypt';
+  name: string;
+}) {
+  return (
+    <View style={styles.centerFill}>
+      <Text style={styles.percent}>{percent}%</Text>
+      <Text style={styles.progressLabel}>
+        {percent === 0
+          ? 'Preparing…'
+          : pass === 'verify'
+            ? 'Verifying integrity'
+            : 'Decrypting'}
+      </Text>
+      <View style={styles.progressTrack}>
+        <View style={[styles.progressFill, { width: `${Math.max(3, percent)}%` }]} />
+      </View>
+      <Text style={styles.progressName} numberOfLines={1}>
+        {name}
+      </Text>
+    </View>
+  );
+}
+
+function ErrorState({
+  message,
+  onRetry,
+  onBack,
+  retryable,
+}: {
+  message: string;
+  onRetry?: () => void;
+  onBack: () => void;
+  retryable?: boolean;
+}) {
+  return (
+    <View style={styles.centerFill}>
+      <View style={[styles.iconBadge, styles.iconBadgeDanger]}>
+        <Ionicons name="alert-circle-outline" size={28} color="#FCA5A5" />
+      </View>
+      <Text style={styles.stateTitle}>Couldn’t open this file</Text>
+      <Text style={styles.stateMessage}>{message}</Text>
+      <View style={styles.stateActions}>
+        {retryable && onRetry ? (
+          <Pressable
+            onPress={onRetry}
+            accessibilityRole="button"
+            style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed]}>
+            <Ionicons name="refresh" size={15} color="#FFFFFF" />
+            <Text style={styles.primaryText}>Try again</Text>
+          </Pressable>
+        ) : null}
+        <Pressable
+          onPress={onBack}
+          accessibilityRole="button"
+          style={({ pressed }) => [styles.ghostButton, pressed && styles.pressed]}>
+          <Text style={styles.ghostText}>Go back</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+function VideoPlayerView({
+  uri,
+  onPlayingChange,
+}: {
+  uri: string;
+  onPlayingChange: (playing: boolean) => void;
+}) {
+  // Deliberately no autoplay: opening a file should never start playing sound.
+  const [started, setStarted] = useState(false);
+  const player = useVideoPlayer({ uri });
+  const { status } = useEvent(player, 'statusChange', { status: player.status });
+
+  // Lets the parent fade its chrome out while the video is playing and bring
+  // it back on pause/end, so the overlay never fights the native controls.
+  useEventListener(player, 'playingChange', ({ isPlaying }) => onPlayingChange(isPlaying));
+
+  const failed = status === 'error';
+  const buffering = started && (status === 'loading' || status === 'idle');
+
+  const start = () => {
+    setStarted(true);
+    player.play();
+  };
+
+  const retry = () => {
+    setStarted(false);
+    void player.replaceAsync({ uri });
+  };
+
+  return (
+    <View style={StyleSheet.absoluteFill}>
+      <VideoView
+        player={player}
+        style={StyleSheet.absoluteFill}
+        contentFit="contain"
+        nativeControls={started}
+        fullscreenOptions={{ enable: true }}
+        // TextureView lets our play overlay sit on top of the video surface.
+        surfaceType="textureView"
+      />
+
+      {failed ? (
+        <View style={[StyleSheet.absoluteFill, styles.stageOverlay]}>
+          <View style={styles.iconBadge}>
+            <Ionicons name="videocam-off-outline" size={26} color="rgba(255,255,255,0.75)" />
+          </View>
+          <Text style={styles.stateTitle}>This video can’t be played</Text>
+          <Text style={styles.stateMessage}>
+            The file may use a format this device doesn’t support.
+          </Text>
+          <View style={styles.stateActions}>
+            <Pressable
+              onPress={retry}
+              accessibilityRole="button"
+              style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed]}>
+              <Ionicons name="refresh" size={15} color="#FFFFFF" />
+              <Text style={styles.primaryText}>Try again</Text>
+            </Pressable>
+          </View>
+        </View>
+      ) : started ? (
+        buffering ? (
+          <View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.buffering]}>
+            <ActivityIndicator color="#FFFFFF" />
+          </View>
+        ) : null
+      ) : (
+        <Pressable
+          onPress={start}
+          accessibilityRole="button"
+          accessibilityLabel="Play video"
+          style={({ pressed }) => [
+            StyleSheet.absoluteFill,
+            styles.stageOverlay,
+            styles.playOverlay,
+            pressed && styles.pressed,
+          ]}>
+          <View style={styles.playButton}>
+            <Ionicons name="play" size={30} color="#FFFFFF" style={styles.playIcon} />
+          </View>
+          <Text style={styles.playHint}>Tap to play</Text>
+        </Pressable>
+      )}
+    </View>
+  );
+}
+
+function DocumentView({
+  item,
+  file,
+  onOpenError,
+}: {
+  item: VaultItem;
+  file: File;
+  onOpenError: (message: string) => void;
+}) {
+  const [opening, setOpening] = useState(false);
+
+  const open = async () => {
+    if (opening) return;
+    setOpening(true);
+    try {
+      const can = await file.canPreview();
+      if (!can) {
+        onOpenError('No app on this device can open this file type.');
+        return;
+      }
+      await file.preview({ title: item.name, mimeType: item.mime || undefined });
+    } catch (error) {
+      onOpenError(errorMessage(error));
+    } finally {
+      setOpening(false);
+    }
+  };
+
+  return (
+    <View style={styles.centerFill}>
+      <View style={styles.docCard}>
+        <LinearGradient
+          colors={['#6366F1', '#8B5CF6']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.docIcon}>
+          <Ionicons name={documentIcon(item.mime)} size={30} color="#FFFFFF" />
+        </LinearGradient>
+        <Text style={styles.docKind}>
+          {item.ext ? `${item.ext.toUpperCase()} file` : 'Document'}
+        </Text>
+        <Text style={styles.docMeta}>
+          {formatBytes(item.size)} · {formatDate(item.createdAt)}
+        </Text>
+        <Pressable
+          onPress={() => void open()}
+          disabled={opening}
+          accessibilityRole="button"
+          accessibilityLabel="Open document"
+          style={({ pressed }) => [
+            styles.primaryButton,
+            styles.openButton,
+            pressed && styles.pressed,
+            opening && styles.disabled,
+          ]}>
+          {opening ? (
+            <ActivityIndicator color="#FFFFFF" size="small" />
+          ) : (
+            <Ionicons name="open-outline" size={16} color="#FFFFFF" />
+          )}
+          <Text style={styles.primaryText}>{opening ? 'Opening…' : 'Open document'}</Text>
+        </Pressable>
+        <Text style={styles.docHint}>
+          Opens in another app · the file stays encrypted inside HideMe
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+function RoundButton({
+  icon,
+  label,
+  onPress,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      hitSlop={Spacing.two}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      style={({ pressed }) => [styles.roundButton, pressed && styles.pressed]}>
+      <Ionicons name={icon} size={20} color="#FFFFFF" />
+    </Pressable>
   );
 }
 
@@ -279,7 +631,7 @@ function MoveToFolderSheet({
         <Ionicons
           name={item.folderId === null ? 'radio-button-on' : 'radio-button-off'}
           size={18}
-          color={item.folderId === null ? '#6366F1' : theme.text}
+          color={item.folderId === null ? Palette.primary : theme.text}
         />
       ),
       onSelect: async () => {
@@ -293,7 +645,7 @@ function MoveToFolderSheet({
         <Ionicons
           name={item.folderId === folder.id ? 'radio-button-on' : 'radio-button-off'}
           size={18}
-          color={item.folderId === folder.id ? '#6366F1' : theme.text}
+          color={item.folderId === folder.id ? Palette.primary : theme.text}
         />
       ),
       onSelect: async () => {
@@ -303,225 +655,252 @@ function MoveToFolderSheet({
     })),
   ];
 
-  return <ActionSheetModal visible={visible} title="Move to folder" actions={actions} onClose={onClose} />;
-}
-
-function VideoPlayerView({ uri }: { uri: string }) {
-  const theme = useTheme();
-  const [firstFrame, setFirstFrame] = useState(false);
-  const player = useVideoPlayer({ uri }, (p) => {
-    p.play();
-  });
-
   return (
-    <View style={styles.videoWrap}>
-      {!firstFrame && (
-        <View style={[styles.centerBox, StyleSheet.absoluteFill]}>
-          <ActivityIndicator color={theme.textSecondary} />
-        </View>
-      )}
-      <VideoView
-        player={player}
-        style={styles.video}
-        contentFit="contain"
-        nativeControls
-        onFirstFrameRender={() => setFirstFrame(true)}
-      />
-    </View>
-  );
-}
-
-function DocumentView({
-  item,
-  file,
-  onOpenError,
-}: {
-  item: VaultItem;
-  file: File;
-  onOpenError: (message: string) => void;
-}) {
-  const theme = useTheme();
-  const [opening, setOpening] = useState(false);
-
-  const open = async () => {
-    if (opening) return;
-    setOpening(true);
-    try {
-      const can = await file.canPreview();
-      if (!can) {
-        onOpenError('No app on this device can open this file type.');
-        return;
-      }
-      await file.preview({ title: item.name, mimeType: item.mime || undefined });
-    } catch (error) {
-      onOpenError(errorMessage(error));
-    } finally {
-      setOpening(false);
-    }
-  };
-
-  return (
-    <View style={styles.centerBox}>
-      <Ionicons name="document-text-outline" size={44} color={theme.textSecondary} />
-      <ThemedText type="small" themeColor="textSecondary" numberOfLines={2} style={styles.docName}>
-        {item.name}
-      </ThemedText>
-      <ThemedText type="code" themeColor="textSecondary">
-        {item.mime} · {formatBytes(item.size)}
-      </ThemedText>
-      <Pressable
-        onPress={() => void open()}
-        disabled={opening}
-        accessibilityRole="button"
-        style={({ pressed }) => [
-          styles.openButton,
-          pressed && styles.pressed,
-          opening && styles.disabled,
-        ]}>
-        <Ionicons name="eye-outline" size={16} color="#ffffff" />
-        <ThemedText type="small" style={styles.openButtonText}>
-          {opening ? 'Opening…' : 'Open document'}
-        </ThemedText>
-      </Pressable>
-    </View>
-  );
-}
-
-function Header({
-  title,
-  onBack,
-  onMore,
-}: {
-  title: string;
-  onBack: () => void;
-  onMore?: () => void;
-}) {
-  const theme = useTheme();
-  return (
-    <View style={styles.headerRow}>
-      <Pressable
-        onPress={onBack}
-        hitSlop={Spacing.two}
-        accessibilityRole="button"
-        accessibilityLabel="Back"
-        style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]}>
-        <Ionicons name="chevron-back" size={20} color={theme.text} />
-      </Pressable>
-      <ThemedText type="smallBold" numberOfLines={1} style={styles.headerTitle}>
-        {title}
-      </ThemedText>
-      {onMore ? (
-        <Pressable
-          onPress={onMore}
-          hitSlop={Spacing.two}
-          accessibilityRole="button"
-          accessibilityLabel="File actions"
-          style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]}>
-          <Ionicons name="ellipsis-horizontal" size={18} color={theme.text} />
-        </Pressable>
-      ) : (
-        <View style={styles.iconButton} />
-      )}
-    </View>
+    <ActionSheetModal visible={visible} title="Move to folder" actions={actions} onClose={onClose} />
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-  },
-  safeArea: {
-    flex: 1,
-    paddingHorizontal: Spacing.three,
-    gap: Spacing.two,
-  },
-  headerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.two,
-    paddingVertical: Spacing.one,
-  },
-  headerTitle: {
-    flex: 1,
-    fontSize: 16,
-    textAlign: 'center',
-  },
-  iconButton: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    alignItems: 'center',
-    justifyContent: 'center',
+    backgroundColor: '#000000',
   },
   stage: {
     flex: 1,
-    borderRadius: Spacing.three,
-    overflow: 'hidden',
-    alignItems: 'center',
-    justifyContent: 'center',
+    backgroundColor: '#000000',
   },
-  centerBox: {
+  centerFill: {
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     gap: Spacing.two,
     padding: Spacing.four,
   },
+  stageOverlay: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.two,
+    backgroundColor: 'rgba(0,0,0,0.72)',
+    padding: Spacing.four,
+  },
+  buffering: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  // chrome
+  topScrim: {
+    paddingHorizontal: Spacing.three,
+    paddingBottom: Spacing.five,
+  },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
+    paddingTop: Spacing.one,
+  },
+  headerText: {
+    flex: 1,
+    gap: 2,
+  },
+  headerTitle: {
+    color: '#FFFFFF',
+    fontFamily: Fonts.sansSemiBold,
+    fontSize: 16,
+  },
+  headerSubtitle: {
+    color: 'rgba(255,255,255,0.6)',
+    fontFamily: Fonts.sans,
+    fontSize: 12,
+  },
+  roundButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.18)',
+  },
+  missingHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: Spacing.three,
+    paddingBottom: Spacing.two,
+  },
+
+  // decrypt progress
+  percent: {
+    color: '#FFFFFF',
+    fontFamily: Fonts.sansBold,
+    fontSize: 34,
+    letterSpacing: -0.5,
+  },
+  progressLabel: {
+    color: 'rgba(255,255,255,0.7)',
+    fontFamily: Fonts.sansMedium,
+    fontSize: 13,
+  },
   progressTrack: {
-    width: 180,
-    height: 4,
+    width: 200,
+    height: 3,
     borderRadius: 2,
     overflow: 'hidden',
+    backgroundColor: 'rgba(255,255,255,0.16)',
+    marginTop: Spacing.two,
   },
   progressFill: {
     height: '100%',
     borderRadius: 2,
-    backgroundColor: '#6366F1',
+    backgroundColor: '#818CF8',
   },
-  image: {
-    width: '100%',
-    height: '100%',
-  },
-  videoWrap: {
-    width: '100%',
-    height: '100%',
-  },
-  video: {
-    width: '100%',
-    height: '100%',
-  },
-  docName: {
+  progressName: {
+    color: 'rgba(255,255,255,0.45)',
+    fontFamily: Fonts.mono,
+    fontSize: 12,
+    marginTop: Spacing.three,
+    paddingHorizontal: Spacing.five,
     textAlign: 'center',
-    fontFamily: Fonts.sansBold,
-    color: undefined,
   },
-  openButton: {
+
+  // shared empty/error state
+  iconBadge: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.16)',
+    marginBottom: Spacing.one,
+  },
+  iconBadgeDanger: {
+    backgroundColor: 'rgba(239,68,68,0.16)',
+    borderColor: 'rgba(239,68,68,0.35)',
+  },
+  stateTitle: {
+    color: '#FFFFFF',
+    fontFamily: Fonts.sansSemiBold,
+    fontSize: 16,
+    textAlign: 'center',
+  },
+  stateMessage: {
+    color: 'rgba(255,255,255,0.6)',
+    fontFamily: Fonts.sans,
+    fontSize: 13,
+    lineHeight: 19,
+    textAlign: 'center',
+    maxWidth: 300,
+  },
+  stateActions: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.one,
-    backgroundColor: '#6366F1',
+    gap: Spacing.two,
+    marginTop: Spacing.three,
+  },
+  primaryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    minHeight: 42,
     paddingHorizontal: Spacing.four,
-    paddingVertical: Spacing.two,
-    borderRadius: Spacing.three,
-    marginTop: Spacing.two,
-    minHeight: 40,
+    borderRadius: 21,
+    backgroundColor: Palette.primary,
   },
-  openButtonText: {
-    color: '#ffffff',
+  primaryText: {
+    color: '#FFFFFF',
+    fontFamily: Fonts.sansSemiBold,
+    fontSize: 13,
   },
-  meta: {
-    gap: 2,
-    paddingVertical: Spacing.two,
-    paddingHorizontal: Spacing.one,
+  ghostButton: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 42,
+    paddingHorizontal: Spacing.four,
+    borderRadius: 21,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.18)',
   },
-  errorText: {
+  ghostText: {
+    color: 'rgba(255,255,255,0.85)',
+    fontFamily: Fonts.sansMedium,
+    fontSize: 13,
+  },
+
+  // video
+  playOverlay: {
+    backgroundColor: 'rgba(0,0,0,0.28)',
+    gap: Spacing.three,
+  },
+  playButton: {
+    width: 78,
+    height: 78,
+    borderRadius: 39,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.16)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.35)',
+  },
+  playIcon: {
+    marginLeft: 4,
+  },
+  playHint: {
+    color: 'rgba(255,255,255,0.85)',
+    fontFamily: Fonts.sansMedium,
+    fontSize: 13,
+    letterSpacing: 0.2,
+  },
+
+  // document
+  docCard: {
+    width: '86%',
+    maxWidth: 340,
+    alignItems: 'center',
+    padding: Spacing.four,
+    borderRadius: 22,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.12)',
+  },
+  docIcon: {
+    width: 64,
+    height: 64,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: Spacing.three,
+  },
+  docKind: {
+    color: '#FFFFFF',
+    fontFamily: Fonts.sansSemiBold,
+    fontSize: 16,
+  },
+  docMeta: {
+    color: 'rgba(255,255,255,0.55)',
+    fontFamily: Fonts.sans,
+    fontSize: 12,
+    marginTop: 2,
+  },
+  openButton: {
+    marginTop: Spacing.four,
+    minWidth: 190,
+    minHeight: 44,
+    borderRadius: 22,
+  },
+  docHint: {
+    color: 'rgba(255,255,255,0.4)',
+    fontFamily: Fonts.sans,
+    fontSize: 11,
+    lineHeight: 16,
     textAlign: 'center',
-    lineHeight: 20,
+    marginTop: Spacing.three,
   },
-  smallButton: {
-    paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.two,
-    borderRadius: Spacing.three,
-  },
+
   pressed: {
     opacity: 0.75,
   },

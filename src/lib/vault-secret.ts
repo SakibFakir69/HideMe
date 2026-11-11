@@ -3,6 +3,7 @@ import { sha256 } from '@noble/hashes/sha2.js';
 import * as Crypto from 'expo-crypto';
 import * as SecureStore from 'expo-secure-store';
 
+import { nativePbkdf2 } from '../../modules/vault-crypto';
 import {
   MASTER_KEY_BYTES,
   aesGcmUnwrap,
@@ -15,10 +16,10 @@ import {
 const STORAGE_KEY = 'vault.secret.v1';
 const BIOMETRIC_KEY = 'vault.mk.biometric';
 const ALGO = 'pbkdf2-sha256';
-// 210k: OWASP's 2023+ documented minimum for PBKDF2-SHA256. On pure-JS mobile
-// this takes tens of seconds on debug Hermes — validate unlock time on a
-// release build; if it is still too slow the fix is native PBKDF2
-// (react-native-quick-crypto), not fewer iterations.
+// 210k: OWASP's 2023+ documented minimum for PBKDF2-SHA256. Android runs this
+// through the platform provider (native, ~1 s); Hermes/iOS/web fall back to
+// the pure-JS implementation, which is much slower but produces identical
+// bytes, so records stay portable across platforms.
 // Stored records carry their own `c`, so old setups keep their original cost.
 export const PBKDF2_ROUNDS = 210_000;
 const ITERATIONS = PBKDF2_ROUNDS;
@@ -77,7 +78,23 @@ function isValidCode(code: string): boolean {
 const rand = (length: number): Uint8Array => Crypto.getRandomBytes(length);
 
 async function derive(code: string, salt: Uint8Array, iterations: number): Promise<Uint8Array> {
-  return pbkdf2Async(sha256, code, salt, {
+  // Android 8+ derives through the platform PBKDF2 (native code) — the same
+  // algorithm and iteration count, roughly two orders of magnitude faster
+  // than Hermes. Everything else falls back to the JS implementation.
+  const nativeStarted = Date.now();
+  const nativeKey = await nativePbkdf2(code, salt, iterations, DK_BYTES);
+  if (nativeKey) {
+    if (__DEV__) {
+      console.log(
+        `[vault] native PBKDF2 ${iterations} iters in ${Date.now() - nativeStarted} ms`,
+      );
+    }
+    return nativeKey;
+  }
+
+  if (__DEV__) console.log('[vault] native PBKDF2 unavailable — using JS fallback');
+  const jsStarted = Date.now();
+  const jsKey = await pbkdf2Async(sha256, code, salt, {
     c: iterations,
     dkLen: DK_BYTES,
     // Yield to RN's event loop only every ~100ms of work: smaller ticks made
@@ -85,6 +102,10 @@ async function derive(code: string, salt: Uint8Array, iterations: number): Promi
     // total time (the "minutes to secure a PIN" bug).
     asyncTick: 100,
   });
+  if (__DEV__) {
+    console.log(`[vault] JS PBKDF2 ${iterations} iters in ${Date.now() - jsStarted} ms`);
+  }
+  return jsKey;
 }
 
 function splitDerived(dk: Uint8Array): { hash: Uint8Array; kek: Uint8Array } {

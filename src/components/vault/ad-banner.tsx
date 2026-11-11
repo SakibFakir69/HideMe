@@ -2,16 +2,18 @@ import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { getAdsModule, resolveUnitId } from '@/lib/ads-native';
+import { usePremium } from '@/lib/premium';
 
 /**
  * Small fixed-size banner. Renders nothing while the ads SDK is unavailable
  * or has no fill, so a missing ad never leaves a broken placeholder — or
- * crashes a build that lacks the native module.
+ * crashes a build that lacks the native module. Premium hides it entirely.
  */
 export function AdBanner() {
   const [failed, setFailed] = useState(false);
+  const premium = usePremium();
   const ads = getAdsModule();
-  if (!ads || failed) return null;
+  if (premium.active || !ads || failed) return null;
 
   const { BannerAd, BannerAdSize } = ads;
   return (

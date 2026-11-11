@@ -57,7 +57,11 @@
         }
       ],
       "expo-font",
-      "expo-image"
+      "expo-image",
+      "expo-iap",
+      "expo-notifications",
+      "./plugins/with-launcher-disguise",
+      "expo-sharing"
     ],
     "experiments": {
       "typedRoutes": true,

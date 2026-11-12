@@ -299,6 +299,14 @@ The tree is clean. Recent commits, newest first:
 
 | Commit | What |
 |---|---|
+| `4088f95` | Photo pager driven by the photo's own swipe gesture (verified on the emulator: 1/9 → 2/9 → 3/9, back-swipe, edge clamp, tap still toggles chrome) |
+| `c0ba486` | Docs: auto-lock/picker interaction found on device |
+| `f3995e2` | Fix: the photo viewer swallowed the pager swipe and toggled the chrome |
+| `48b7f4d` | Docs: reword the cancelable import entry |
+| `a6fb9fe` | Refactor: only show the spinner while the import is cancelling |
+| `f37733d` | Cancelable imports |
+| `28baa62` | Docs: track the gaps against DESIGN.md, fix two inaccurate claims |
+| `f4a2b5d` | Docs: refresh the repository state and the list of open items |
 | `3ac1db3` | Tests for the store's pure logic (`lib/vault-index-core.ts`) |
 | `f8426f2` | Startup / unlock timings, shown in Settings → Performance |
 | `80a8c39` | Setup-screen visual pass, biometric opt-in, recovery warning |
@@ -314,11 +322,15 @@ Verified after every wave: `tsc --noEmit`, `expo lint`, the unit tests
 android` (manifest and backup rules checked) and
 `gradlew :vault-crypto:compileDebugKotlin` (BUILD SUCCESSFUL).
 
+An x86_64 emulator is now attached, so viewer work can be checked on device:
+`adb shell input swipe/tap` plus `uiautomator dump` read the UI tree even
+though the vault window is `FLAG_SECURE` (screenshots stay black).
+
 Still open, and why:
 
 | Item | Why it is open |
 |---|---|
-| Masonry / justified grid | DESIGN.md asks for a grid that keeps the real photo ratio. The current one is a uniform square crop; redesigning it blind (no device or emulator here to check it on) is riskier than it is worth |
+| Masonry / justified grid | DESIGN.md asks for a grid that keeps the real photo ratio. The current one is a uniform square crop; it needs a layout decision plus a visual check on device |
 | Bulk share / export | `expo-sharing` shares a single file and the document picker cannot save to a user-chosen location. A multi-file export needs a zip dependency, which is a deliberate decision rather than an oversight |
 | Store-side receipt validation | The entitlement is local. The silent launch-time store sync covers reinstalls and device changes; server-side validation would need a backend |
 | Filesystem tests for the store | The pure decisions are extracted and covered; the remaining file calls need a fake |

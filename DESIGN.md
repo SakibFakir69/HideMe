@@ -199,7 +199,10 @@ Root Stack
 - Video: never autoplays — first frame + "Tap to play", then native controls with fullscreen.
 - Document: centred card with type icon, size/date and **Open document** (system preview sheet).
 - Decryption owns the whole stage: percentage, pass label (verify → decrypt) and a thin progress bar.
-- Header: filename + pager `1/5` with swipe.
+- Header: filename + pager `1/5`; a sideways swipe on a photo pages to the neighbour (the gesture inside
+  the page takes the touch, so the photo reports the swipe and the gallery moves the list), and at 1× only —
+  a zoomed photo pans instead.
+- Photos zoom: pinch (1×–4×), double-tap to toggle, clamped so the image cannot be dragged out of frame.
 - Share/Delete live in the More sheet (Delete = move to bin); a persistent bottom bar (Share · Delete ·
   More) is still pending, P2.
 

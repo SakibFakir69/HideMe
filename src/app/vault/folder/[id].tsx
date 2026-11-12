@@ -39,7 +39,9 @@ export default function FolderScreen() {
   const theme = useTheme();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { index, error, loading, refresh } = useVaultIndex();
-  const { busy: importing, progress, importAssets } = useVaultImport(refresh);
+  const { busy: importing, state, cancel, dismiss, importAssets } = useVaultImport(async () => {
+    await refresh();
+  });
   const [query, setQuery] = useState('');
   const [renaming, setRenaming] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -256,7 +258,7 @@ export default function FolderScreen() {
         )}
       </SafeAreaView>
 
-      <ImportProgressModal progress={progress} />
+      <ImportProgressModal state={state} onCancel={cancel} onDismiss={dismiss} />
 
       <MoveItemsSheet
         visible={moveOpen}

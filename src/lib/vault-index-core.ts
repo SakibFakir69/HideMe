@@ -1,9 +1,40 @@
-// Pure helpers for the vault index: file naming, search and statistics.
+// Pure helpers and types for the vault index: file naming, search and statistics.
 // No RN/expo imports (node --test compatible).
 
 // The explicit extension keeps this module loadable by `node --test`, which
 // resolves ESM imports strictly.
 import { isDeleted } from './vault-bin-core.ts';
+import type { ItemKind } from './vault-kinds.ts';
+
+export type { ItemKind };
+
+export interface VaultFolder {
+  id: string;
+  name: string;
+  createdAt: number;
+}
+
+export interface VaultItem {
+  id: string;
+  name: string;
+  kind: ItemKind;
+  mime: string;
+  ext: string;
+  size: number;
+  folderId: string | null;
+  createdAt: number;
+  /** set while the item is in Recently-deleted; removed on restore */
+  deletedAt?: number;
+  width?: number;
+  height?: number;
+  durationMs?: number;
+}
+
+export interface VaultIndex {
+  v: 3;
+  folders: VaultFolder[];
+  items: VaultItem[];
+}
 
 /**
  * The extension of an imported file.

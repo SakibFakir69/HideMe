@@ -149,11 +149,20 @@ Root Stack
 ### 5.5 Import Files
 - Header: back + "Import Files". Search ("Search documents…").
 - Source rows, each icon + title + subtitle:
-  - Photos & Videos — From gallery or camera
-  - Documents — PDF, TXT, DOCX, etc.
+  - Photos & Videos — From your photo library
   - Audio — MP3, WAV, etc.
-  - Other Files — ZIP, APK, etc.
+  - Documents & other files — PDF, TXT, ZIP, APK, etc.
 - Import shows a **progress modal** (per-file %, cancelable). Completion: toast/summary.
+- **Cancel** (implemented): the modal carries a Cancel button while the batch runs.
+  - *Importing* — progress bar, per-file %, current file name, **Cancel** enabled.
+  - *Cancelling* — the button is disabled and reads "Cancelling…". The modal stays up
+    until the cleanup finished; it is never dismissed early.
+  - *Cancelled* — "Import cancelled" plus how many files made it into the vault,
+    then **Done**. The files that were imported before the cancel are kept.
+  - *Completed* — "Import complete" plus the number of files added, then **Done**.
+  - *Failed* — the error, plus how many files were kept, then **Done**. Retrying is safe.
+- Repeated taps on Cancel change nothing. Leaving the screen stops the batch at
+  the next checkpoint; backgrounding the app does **not** cancel it.
 
 ### 5.6 Settings
 - Section **Security** (fix typo "Securitory"):

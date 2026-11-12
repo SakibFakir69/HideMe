@@ -1,12 +1,13 @@
 import * as Crypto from 'expo-crypto';
-import { Directory, File, Paths } from 'expo-file-system';
+import { Directory, File, FileMode, Paths, type FileHandle } from 'expo-file-system';
 
 import { binEntries, expiredIds, isDeleted } from './vault-bin-core';
 import {
   computeStats as computeStatsCore,
-  extFor as extForCore,
-  importFraction,
   searchItems as searchItemsCore,
+  type VaultFolder,
+  type VaultIndex,
+  type VaultItem,
 } from './vault-index-core';
 import { mark } from './perf';
 import {
@@ -23,7 +24,16 @@ import {
   utf8,
   type Random,
 } from './crypto/envelope';
-import { decryptFile, encryptFile, type FileCryptoProgress } from './crypto/file-crypto';
+import {
+  decryptFile,
+  type CryptoDestFile,
+  type CryptoFileHandle,
+  type CryptoSourceFile,
+  type FileCryptoProgress,
+} from './crypto/file-crypto';
+import { expoFileSystem } from './vault-fs-expo';
+import type { ImportCancellation } from './import-cancellation';
+import { runImport, type ImportOutcome, type ImportPaths, type ImportProgress, type PickedAsset } from './vault-import';
 import { onLock } from './vault-session';
 
 /**
@@ -33,58 +43,9 @@ import { onLock } from './vault-session';
  *   <cache>/vault-tmp/...           decrypted plaintext (purged on lock)
  */
 
-export type { ItemKind };
+export type { ItemKind, VaultFolder, VaultIndex, VaultItem };
 export { INDEX_VERSION, kindForMime };
-
-export interface VaultFolder {
-  id: string;
-  name: string;
-  createdAt: number;
-}
-
-export interface VaultItem {
-  id: string;
-  name: string;
-  kind: ItemKind;
-  mime: string;
-  ext: string;
-  size: number;
-  folderId: string | null;
-  createdAt: number;
-  /** set while the item is in Recently-deleted; removed on restore */
-  deletedAt?: number;
-  width?: number;
-  height?: number;
-  durationMs?: number;
-}
-
-export interface VaultIndex {
-  v: 3;
-  folders: VaultFolder[];
-  items: VaultItem[];
-}
-
-export interface PickedAsset {
-  uri: string;
-  name: string;
-  mime: string;
-  width?: number;
-  height?: number;
-  durationMs?: number;
-}
-
-export interface ImportProgress {
-  /** 0-based index of the file being encrypted */
-  fileIndex: number;
-  fileCount: number;
-  /** bytes within the current file */
-  processed: number;
-  fileBytes: number;
-  /** 0..1 across the whole batch */
-  fraction: number;
-  /** transient label (e.g. "Preparing…") shown instead of the file label */
-  phase?: string;
-}
+export type { ImportOutcome, ImportProgress, PickedAsset } from './vault-import';
 
 const rand: Random = (length: number) => Crypto.getRandomBytes(length);
 
@@ -146,16 +107,57 @@ function ensureDir(dir: Directory): void {
   if (!dir.exists) dir.create();
 }
 
-function ensureIndexFile(): File {
-  ensureDir(rootDir());
-  const f = indexFile();
-  if (f.exists) f.delete();
-  f.create();
-  return f;
-}
-
 export function itemFile(itemId: string): File {
   return new File(filesDir(), `${itemId}.hmd`);
+}
+
+/* ------------------------------------------------------------------ */
+/* expo-file-system adapters                                           */
+/* ------------------------------------------------------------------ */
+
+/** Wraps an expo file handle in the small interface the crypto uses. */
+function handleAdapter(handle: FileHandle): CryptoFileHandle {
+  return {
+    get offset(): number {
+      return handle.offset ?? 0;
+    },
+    set offset(value: number) {
+      handle.offset = value;
+    },
+    readBytes: (length: number) => handle.readBytes(length),
+    writeBytes: (bytes: Uint8Array) => handle.writeBytes(bytes),
+    close: () => handle.close(),
+  };
+}
+
+/** An expo file seen as a read-only source. */
+function cryptoSource(file: File): CryptoSourceFile {
+  return {
+    get exists(): boolean {
+      return file.exists;
+    },
+    get size(): number | null {
+      return file.size;
+    },
+    openRead: () => handleAdapter(file.open(FileMode.ReadOnly)),
+  };
+}
+
+/** An expo file seen as a write target. */
+function cryptoDest(file: File): CryptoDestFile {
+  return {
+    get exists(): boolean {
+      return file.exists;
+    },
+    create: () => {
+      if (file.exists) file.delete();
+      file.create();
+    },
+    delete: () => {
+      if (file.exists) file.delete();
+    },
+    openWrite: () => handleAdapter(file.open(FileMode.ReadWrite)),
+  };
 }
 
 /**
@@ -167,17 +169,35 @@ function normalizeItem(item: VaultItem): VaultItem {
   return kind === item.kind ? item : { ...item, kind };
 }
 
-function extFor(name: string, mime: string): string {
-  return extForCore(name, mime);
-}
-
 /* ------------------------------------------------------------------ */
 /* index                                                               */
 /* ------------------------------------------------------------------ */
 
+/**
+ * Removes the partial blobs of an import that was killed before it could
+ * finish. Only files with the `.partial` suffix are touched — the vault
+ * blobs are never part of this.
+ */
+function purgePartialBlobs(): void {
+  const dir = filesDir();
+  if (!dir.exists) return;
+  try {
+    for (const entry of dir.list()) {
+      if (entry instanceof File && entry.name.endsWith('.partial') && entry.exists) {
+        entry.delete();
+      }
+    }
+  } catch {
+    // best effort — a leftover temp file is not worth failing the vault over
+  }
+}
+
 export async function loadIndex(masterKey: Uint8Array): Promise<VaultIndex> {
   if (cachedIndex) return cachedIndex;
   ensureDir(rootDir());
+  ensureDir(filesDir());
+  // An import that was killed mid-file left a partial blob behind.
+  purgePartialBlobs();
   const f = indexFile();
   if (!f.exists) {
     cachedIndex = emptyIndex();
@@ -211,8 +231,20 @@ export async function loadIndex(masterKey: Uint8Array): Promise<VaultIndex> {
 async function saveIndex(masterKey: Uint8Array): Promise<void> {
   if (!cachedIndex) throw new Error('Vault index is not loaded.');
   const bytes = encryptBytes(utf8(JSON.stringify(cachedIndex)), masterKey, 'vault-index', rand);
-  const f = ensureIndexFile();
-  await f.write(bytes);
+  // The index is written to a temporary file and moved into place: a failed
+  // write leaves the previous index intact instead of a half-written one.
+  const target = indexFile();
+  const temp = new File(rootDir(), 'index.hmd.tmp');
+  if (temp.exists) temp.delete();
+  temp.create();
+  try {
+    await temp.write(bytes);
+    if (target.exists) target.delete();
+    await temp.move(target);
+  } catch (error) {
+    if (temp.exists) temp.delete();
+    throw error;
+  }
   notifyIndexListeners();
 }
 
@@ -289,10 +321,28 @@ export interface ImportOptions {
   folderId: string | null;
   assets: PickedAsset[];
   onProgress?: (p: ImportProgress) => void;
+  /** Cancels this import. Scoped to this batch. */
+  cancellation?: ImportCancellation;
 }
 
-export async function importAssets(opts: ImportOptions): Promise<VaultItem[]> {
-  const { masterKey, folderId, assets, onProgress } = opts;
+/**
+ * Where an import writes its blobs: the final path of an item, and the
+ * partial path the blob is written to before it is complete.
+ */
+const IMPORT_PATHS: ImportPaths = {
+  blob: (itemId) => itemFile(itemId).uri,
+  partial: (itemId) => new File(filesDir(), `${itemId}.partial`).uri,
+};
+
+/**
+ * Imports a batch of files into the vault.
+ *
+ * The batch can be cancelled: the files that were imported before the
+ * cancellation stay in the vault, the file that was interrupted leaves
+ * nothing behind, and the index is written once with the result.
+ */
+export async function importAssets(opts: ImportOptions): Promise<ImportOutcome> {
+  const { masterKey, folderId, assets, onProgress, cancellation } = opts;
   const index = await loadIndex(masterKey);
   if (folderId && !index.folders.some((f) => f.id === folderId)) {
     throw new Error('Folder not found.');
@@ -300,75 +350,23 @@ export async function importAssets(opts: ImportOptions): Promise<VaultItem[]> {
   ensureDir(rootDir());
   ensureDir(filesDir());
 
-  const added: VaultItem[] = [];
-  // Thumbnail building runs mostly in native code (decode → resize → JPEG),
-  // so it overlaps with the JS-side encryption of the following file instead
-  // of running strictly after it. Awaiting only the last one keeps the batch
-  // from serializing into "encrypt, thumbnail, encrypt, thumbnail…".
-  const thumbTasks: Promise<void>[] = [];
-  for (let i = 0; i < assets.length; i++) {
-    const asset = assets[i];
-    const id = Crypto.randomUUID();
-    const source = new File(asset.uri);
-    const dest = itemFile(id);
-    const report = (p: FileCryptoProgress) =>
-      onProgress?.({
-        fileIndex: i,
-        fileCount: assets.length,
-        processed: p.processed,
-        fileBytes: p.total,
-        fraction: importFraction(i, assets.length, p.total > 0 ? p.processed / p.total : 0),
-      });
-    let size = 0;
-    try {
-      size = await encryptFile({
-        source,
-        dest,
-        fileId: id,
-        masterKey,
-        rand,
-        onProgress: report,
-      });
-    } catch (error) {
-      if (dest.exists) dest.delete();
-      const label = asset.name || asset.uri;
-      throw new Error(`Could not encrypt "${label}": ${errorMessage(error)}`);
-    }
-    const item: VaultItem = {
-      id,
-      name: asset.name.trim() || `file-${i + 1}`,
-      kind: kindForMime(asset.mime),
-      mime: asset.mime,
-      ext: extFor(asset.name, asset.mime),
-      size,
-      folderId,
-      createdAt: Date.now(),
-      width: asset.width,
-      height: asset.height,
-      durationMs: asset.durationMs,
-    };
-    index.items.push(item);
-    added.push(item);
-    if (item.kind === 'photo') {
-      // Best-effort: a missing thumb only means the grid falls back to the
-      // slower full-decrypt path once (and builds the thumb then).
-      thumbTasks.push(
-        buildThumbForImport(masterKey, id, asset.uri).catch(() => {
-          // ignore — import itself already succeeded
-        }),
-      );
-    }
-    onProgress?.({
-      fileIndex: i + 1,
-      fileCount: assets.length,
-      processed: 0,
-      fileBytes: 0,
-      fraction: (i + 1) / assets.length,
-    });
-  }
-  await Promise.all(thumbTasks);
-  await saveIndex(masterKey);
-  return added;
+  const outcome = await runImport({
+    fs: expoFileSystem,
+    masterKey,
+    rand,
+    folderId,
+    assets,
+    paths: IMPORT_PATHS,
+    index,
+    saveIndex: () => saveIndex(masterKey),
+    buildThumb: (itemId, sourceUri) => buildThumbForImport(masterKey, itemId, sourceUri),
+    newId: () => Crypto.randomUUID(),
+    now: () => Date.now(),
+    cancellation,
+    onProgress,
+  });
+
+  return outcome;
 }
 
 /** Soft delete: move to Recently-deleted (bin); the encrypted file is kept until purge. */
@@ -570,7 +568,12 @@ export function decryptToCache(
       const source = itemFile(item.id);
       if (!source.exists) throw new Error('Encrypted file is missing from the vault.');
       const dest = plainFileFor(item);
-      await decryptFile({ source, dest, masterKey, onProgress });
+      await decryptFile({
+        source: cryptoSource(source),
+        dest: cryptoDest(dest),
+        masterKey,
+        onProgress,
+      });
       return dest;
     } finally {
       decryptLimiter.release();

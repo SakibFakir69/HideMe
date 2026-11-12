@@ -1,5 +1,5 @@
-import { File, FileMode } from 'expo-file-system';
-
+// The explicit extension keeps this module loadable by `node --test`, which
+// resolves ESM imports strictly.
 import {
   ENVELOPE_MAGIC,
   MAC_BYTES,
@@ -12,36 +12,75 @@ import {
   newMac,
   parseHead,
   recoverFileKeys,
-} from './envelope';
+} from './envelope.ts';
 
 /**
  * Streaming file encryption/decryption for vault blobs.
  * 1 MiB chunks, bounded memory, progress callbacks.
  * Verify-then-decrypt: HMAC is checked over the full ciphertext before
  * a single plaintext byte is written.
+ *
+ * The module talks to the filesystem through the small interfaces below
+ * instead of importing `expo-file-system`, so it stays loadable under
+ * `node --test` and can be exercised against an in-memory filesystem.
  */
 
 export const CHUNK_BYTES = 1024 * 1024;
+
+/** A cursor on an open file. */
+export interface CryptoFileHandle {
+  /** Byte offset the next read or write happens at. */
+  offset: number;
+  readBytes(length: number): Promise<Uint8Array>;
+  writeBytes(bytes: Uint8Array): Promise<void>;
+  close(): void;
+}
+
+/** A file that is read from. */
+export interface CryptoSourceFile {
+  readonly exists: boolean;
+  /** Size in bytes, or null when it cannot be determined. */
+  readonly size: number | null;
+  openRead(): CryptoFileHandle;
+}
+
+/** A file that is written to. */
+export interface CryptoDestFile {
+  readonly exists: boolean;
+  create(): void;
+  delete(): void;
+  openWrite(): CryptoFileHandle;
+}
 
 export interface FileCryptoProgress {
   processed: number;
   total: number;
 }
 
+/**
+ * Called between the stages of an operation. Throwing aborts it — the
+ * import pipeline uses that to stop a long encryption.
+ */
+export type CancellationCheck = () => void;
+
 export interface EncryptFileOptions {
-  source: File;
-  dest: File;
+  source: CryptoSourceFile;
+  dest: CryptoDestFile;
   fileId: string;
   masterKey: Uint8Array;
   rand: Random;
   onProgress?: (p: FileCryptoProgress) => void;
+  /** Checked before the file is touched and between every chunk. */
+  checkCancelled?: CancellationCheck;
 }
 
 export interface DecryptFileOptions {
-  source: File;
-  dest: File;
+  source: CryptoSourceFile;
+  dest: CryptoDestFile;
   masterKey: Uint8Array;
   onProgress?: (p: FileCryptoProgress) => void;
+  /** Checked before the file is touched and between every chunk. */
+  checkCancelled?: CancellationCheck;
 }
 
 export interface DecryptedFileInfo {
@@ -56,13 +95,14 @@ export class VaultCryptoError extends Error {
   }
 }
 
-function ensureMissing(file: File): void {
+function ensureMissing(file: CryptoDestFile): void {
   if (file.exists) file.delete();
   file.create();
 }
 
 export async function encryptFile(opts: EncryptFileOptions): Promise<number> {
-  const { source, dest, fileId, masterKey, rand, onProgress } = opts;
+  const { source, dest, fileId, masterKey, rand, onProgress, checkCancelled } = opts;
+  checkCancelled?.();
   if (!source.exists) throw new VaultCryptoError('Source file does not exist.');
   const total = source.size ?? 0;
   const built = buildHead(fileId, total, masterKey, rand);
@@ -71,8 +111,8 @@ export async function encryptFile(opts: EncryptFileOptions): Promise<number> {
   const mac = newMac(built.macKey).update(prefix);
 
   ensureMissing(dest);
-  const out = dest.open(FileMode.ReadWrite);
-  const input = source.open(FileMode.ReadOnly);
+  const out = dest.openWrite();
+  const input = source.openRead();
   try {
     out.offset = 0;
     // writeBytes is async — every call must be awaited, or close() in finally
@@ -85,6 +125,9 @@ export async function encryptFile(opts: EncryptFileOptions): Promise<number> {
     let plainDone = 0;
     let written = 0;
     while (plainDone < total) {
+      // Between chunks is the only safe place to abort: the file handle stays
+      // valid and the caller can clean the partial file up.
+      checkCancelled?.();
       const want = Math.min(CHUNK_BYTES, total - plainDone);
       const chunk = await input.readBytes(want);
       if (chunk.length !== want) throw new VaultCryptoError('Source file is shorter than expected.');
@@ -99,6 +142,9 @@ export async function encryptFile(opts: EncryptFileOptions): Promise<number> {
     const extra = await input.readBytes(1);
     if (extra.length > 0) throw new VaultCryptoError('Source file is longer than expected.');
 
+    // The MAC is only written once the whole ciphertext is on disk, so a
+    // truncated blob can never pass the integrity check.
+    checkCancelled?.();
     out.offset = prefix.length;
     await out.writeBytes(mac.digest());
     return plainDone;
@@ -109,10 +155,11 @@ export async function encryptFile(opts: EncryptFileOptions): Promise<number> {
 }
 
 export async function decryptFile(opts: DecryptFileOptions): Promise<DecryptedFileInfo> {
-  const { source, dest, masterKey, onProgress } = opts;
+  const { source, dest, masterKey, onProgress, checkCancelled } = opts;
+  checkCancelled?.();
   if (!source.exists) throw new VaultCryptoError('Encrypted file does not exist.');
 
-  const input = source.open(FileMode.ReadOnly);
+  const input = source.openRead();
   try {
     input.offset = 0;
     const fixed6 = await input.readBytes(PREFIX_FIXED_BYTES);
@@ -131,6 +178,7 @@ export async function decryptFile(opts: DecryptFileOptions): Promise<DecryptedFi
     const verifier = newMac(macKey).update(prefix);
     let remaining = total;
     while (remaining > 0) {
+      checkCancelled?.();
       const chunk = await input.readBytes(Math.min(CHUNK_BYTES, remaining));
       if (chunk.length === 0) throw new VaultCryptoError('Vault envelope corrupted (truncated).');
       verifier.update(chunk);
@@ -143,13 +191,14 @@ export async function decryptFile(opts: DecryptFileOptions): Promise<DecryptedFi
 
     // Pass 2 — decrypt and write.
     ensureMissing(dest);
-    const out = dest.open(FileMode.ReadWrite);
+    const out = dest.openWrite();
     try {
       input.offset = parsed.cipherOffset;
       out.offset = 0;
       const fileNonce = base64ToBytes(parsed.header.fn);
       let plainDone = 0;
       while (plainDone < total) {
+        checkCancelled?.();
         const chunk = await input.readBytes(Math.min(CHUNK_BYTES, total - plainDone));
         if (chunk.length === 0) throw new VaultCryptoError('Vault envelope corrupted (truncated).');
         const plain = ctrCipherAt(encKey, fileNonce, plainDone).encrypt(chunk);

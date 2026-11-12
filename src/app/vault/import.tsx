@@ -16,9 +16,11 @@ import { useVaultIndex } from '@/hooks/use-vault-index';
 export default function ImportScreen() {
   const theme = useTheme();
   const { refresh } = useVaultIndex();
-  const { busy, progress, importAssets } = useVaultImport(async () => {
+  const { busy, state, cancel, dismiss, importAssets } = useVaultImport(async (outcome) => {
     await refresh();
-    router.back();
+    // A cancelled import keeps the screen open so another source can be
+    // picked; a finished one goes back to the vault.
+    if (outcome.status === 'completed') router.back();
   });
 
   return (
@@ -65,7 +67,7 @@ export default function ImportScreen() {
         </View>
       </SafeAreaView>
 
-      <ImportProgressModal progress={progress} />
+      <ImportProgressModal state={state} onCancel={cancel} onDismiss={dismiss} />
     </ThemedView>
   );
 }

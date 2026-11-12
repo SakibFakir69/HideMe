@@ -18,6 +18,20 @@ export function isValidAutoLockSeconds(value: unknown): value is AutoLockSeconds
 }
 
 /**
+ * A system picker (photo library, document picker) runs in its own activity,
+ * so the app is backgrounded while the user browses their files. Locking then
+ * would destroy the import on return. The grace is short and one-shot: the
+ * vault still locks if the user wanders off from the picker.
+ */
+export const PICKER_GRACE_MS = 5 * 60_000;
+
+/** Is the bounded picker grace still open at this instant? */
+export function isPickerGraceActive(nowMs: number, graceUntilMs: number): boolean {
+  if (!Number.isFinite(graceUntilMs) || graceUntilMs <= 0) return false;
+  return nowMs < graceUntilMs;
+}
+
+/**
  * A rewarded pause suppresses *timed* auto-lock until overrideUntil.
  * Threshold 0 ("Immediately") is a deliberate security choice and is
  * never suppressed.

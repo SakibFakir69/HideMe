@@ -4,7 +4,9 @@ import { AppState, type AppStateStatus } from 'react-native';
 import {
   DEFAULT_AUTOLOCK_SECONDS,
   isAutoLockSuppressed,
+  isPickerGraceActive,
   isValidAutoLockSeconds,
+  PICKER_GRACE_MS,
   shouldAutoLock,
   type AutoLockSeconds,
 } from './vault-autolock-core';
@@ -14,6 +16,8 @@ export {
   AUTOLOCK_OPTIONS,
   DEFAULT_AUTOLOCK_SECONDS,
   isAutoLockSuppressed,
+  isPickerGraceActive,
+  PICKER_GRACE_MS,
   shouldAutoLock,
   type AutoLockSeconds,
 } from './vault-autolock-core';
@@ -34,6 +38,8 @@ let cacheLoaded = false;
 let started = false;
 let backgroundedAt: number | null = null;
 let overrideUntil = 0;
+/** Bounded window during which a system picker may cover the app. */
+let pickerGraceUntil = 0;
 
 async function readStoredSeconds(): Promise<AutoLockSeconds> {
   try {
@@ -75,6 +81,10 @@ function handleAppStateChange(state: AppStateStatus): void {
     }
     backgroundedAt = Date.now();
     if (cachedThreshold === 0) {
+      // A picker owns the screen right now, so locking here would destroy the
+      // import the user is in the middle of. The grace is short and one-shot:
+      // staying away past it still locks (on return, or on the next event).
+      if (isPickerGraceActive(Date.now(), pickerGraceUntil)) return;
       // lock immediately; if JS suspends first, the active handler catches it
       lock();
       backgroundedAt = null;
@@ -82,14 +92,32 @@ function handleAppStateChange(state: AppStateStatus): void {
     return;
   }
   if (state === 'active') {
-    if (backgroundedAt === null) return;
+    if (backgroundedAt === null) {
+      // Returning from a picker without a background event: nothing to do,
+      // but the grace must not leak into a later, unrelated background.
+      pickerGraceUntil = 0;
+      return;
+    }
     const elapsed = Date.now() - backgroundedAt;
+    const graced = isPickerGraceActive(Date.now(), pickerGraceUntil);
     backgroundedAt = null;
+    pickerGraceUntil = 0;
     if (!isUnlocked()) return;
+    // The user was browsing the photo library or a folder, not away from the
+    // app — hand them back the vault they left.
+    if (graced) return;
     // "Immediately" always locks; a rewarded pause only suppresses timed locks.
     if (isAutoLockSuppressed(Date.now(), overrideUntil, cachedThreshold)) return;
     if (shouldAutoLock(elapsed, cachedThreshold)) lock();
   }
+}
+
+/**
+ * Opens the picker grace window. Called right before a system picker is
+ * launched, so the vault survives the time the picker covers the app.
+ */
+export function beginPickerGrace(): void {
+  pickerGraceUntil = Date.now() + PICKER_GRACE_MS;
 }
 
 async function loadOverride(): Promise<void> {

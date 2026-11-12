@@ -187,7 +187,11 @@ Root Stack
 - Header: back. Shield glyph. "Vault will lock in" + **large countdown `00:59:23`**.
 - Helper: "Keep using the app to reset the timer."
 - Button: **Lock Now** (full-width primary).
-- States: counting down, paused-via-reward (show badge "Paused — 42:10 left"), paused-by-user.
+- States: counting down, paused-via-reward (show badge "Paused - 42:10 left"), paused-by-user.
+- **Picker grace:** opening a system picker (photo library, documents, audio) arms a bounded,
+  one-shot five-minute window in which the auto-lock does not fire — the picker covers the app, so
+  locking there would destroy the import the user is in the middle of. Leaving the picker for
+  longer than the grace still locks.
 
 ### 5.9 Unlock Success
 - Centered green check, "Welcome back!", "Your vault is now unlocked.", **Continue** button.

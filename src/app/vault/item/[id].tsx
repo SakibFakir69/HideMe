@@ -9,7 +9,6 @@ import {
   ActivityIndicator,
   Alert,
   Animated,
-  FlatList,
   Pressable,
   StatusBar,
   StyleSheet,
@@ -17,6 +16,7 @@ import {
   View,
   useWindowDimensions,
 } from 'react-native';
+import { FlatList } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ActionSheetModal, type SheetAction } from '@/components/vault/action-sheet-modal';
@@ -24,7 +24,7 @@ import { AudioPlayer } from '@/components/vault/audio-player';
 import { confirmDestructive } from '@/components/vault/confirm';
 import { formatBytes, formatDate, formatDuration } from '@/components/vault/format';
 import { NamePromptModal } from '@/components/vault/name-prompt-modal';
-import { ZoomableImage } from '@/components/vault/zoomable-image';
+import { ZoomableImage, type SwipeDirection } from '@/components/vault/zoomable-image';
 import { Fonts, Palette, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { useVaultIndex } from '@/hooks/use-vault-index';
@@ -85,6 +85,7 @@ export default function ItemScreen() {
   const [moving, setMoving] = useState(false);
   const [chromeShown, setChromeShown] = useState(true);
   const [videoPlaying, setVideoPlaying] = useState(false);
+  const listRef = useRef<FlatList<VaultItem> | null>(null);
 
   /**
    * The pages the user can swipe through: the list the grid was showing when
@@ -150,6 +151,33 @@ export default function ItemScreen() {
   const toggleChrome = useCallback(() => {
     setChromeShown((visible) => !visible);
   }, []);
+
+  /**
+   * Moves the pager to a page.
+   *
+   * The list cannot be swiped by touch — a gesture handler inside a list
+   * takes the touch before the list can scroll — so the photo reports the
+   * swipe and the list is moved here.
+   */
+  const goToPage = useCallback(
+    (nextIndex: number) => {
+      if (nextIndex < 0 || nextIndex >= pages.length) return;
+      const nextItem = pages[nextIndex];
+      if (!nextItem) return;
+      setChromeShown(true);
+      setVideoPlaying(false);
+      router.setParams({ id: nextItem.id });
+      listRef.current?.scrollToIndex({ index: nextIndex, animated: true });
+    },
+    [pages],
+  );
+
+  const handleSwipe = useCallback(
+    (direction: SwipeDirection) => {
+      goToPage(currentIndex + (direction === 'next' ? 1 : -1));
+    },
+    [currentIndex, goToPage],
+  );
 
   const onShare = useCallback(async () => {
     if (!item) return;
@@ -257,8 +285,13 @@ export default function ItemScreen() {
           </View>
         ) : (
           <FlatList
+            ref={listRef}
             horizontal
             pagingEnabled
+            // The photo reports the swipe and the list is moved here, so the
+            // list must not scroll on its own: a scroll would interrupt the
+            // gesture before it saw the whole drag.
+            scrollEnabled={false}
             showsHorizontalScrollIndicator={false}
             data={pages}
             keyExtractor={(entry) => entry.id}
@@ -284,6 +317,7 @@ export default function ItemScreen() {
                   item={page}
                   isActive={pageIndex === currentIndex}
                   onTapToggle={toggleChrome}
+                  onSwipe={handleSwipe}
                   onVideoPlayingChange={setVideoPlaying}
                 />
               </View>
@@ -365,11 +399,13 @@ function ViewerStage({
   item,
   isActive,
   onTapToggle,
+  onSwipe,
   onVideoPlayingChange,
 }: {
   item: VaultItem;
   isActive: boolean;
   onTapToggle: () => void;
+  onSwipe: (direction: SwipeDirection) => void;
   onVideoPlayingChange: (playing: boolean) => void;
 }) {
   const [decrypt, setDecrypt] = useState<DecryptState>({
@@ -431,6 +467,7 @@ function ViewerStage({
         key={item.id}
         uri={decrypt.file.uri}
         onTap={onTapToggle}
+        onSwipe={onSwipe}
         accessibilityLabel={`${item.name}. Tap to hide or show the controls, double tap to zoom.`}
       />
     );

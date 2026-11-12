@@ -29,6 +29,14 @@ const DOUBLE_TAP_MAX_DELAY_MS = 250;
  * default is unlimited, so a swipe would toggle the controls as well.
  */
 const TAP_MAX_DISTANCE = 12;
+/** How far the finger has to travel sideways before the photo pages. */
+const SWIPE_THRESHOLD = 40;
+/** How far sideways the finger has to travel before the swipe is tracked. */
+const SWIPE_ACTIVATION = 12;
+/** A mostly vertical drag must not page the gallery. */
+const SWIPE_MAX_VERTICAL = 400;
+
+export type SwipeDirection = 'next' | 'prev';
 
 /** Clamp helper that can be called from a worklet. */
 function clamp(value: number, min: number, max: number): number {
@@ -42,6 +50,12 @@ interface ZoomableImageProps {
   uri: string;
   /** Fired on a single tap (a double tap zooms instead). */
   onTap: () => void;
+  /**
+   * Fired when the photo is swiped sideways. The gallery listens to this
+   * instead of scrolling itself: a gesture handler inside the list swallows
+   * the touch before the list can page, so the gesture drives the paging.
+   */
+  onSwipe?: (direction: SwipeDirection) => void;
   /** Screen-reader label for the photo. */
   accessibilityLabel: string;
 }
@@ -53,7 +67,12 @@ interface ZoomableImageProps {
  * derived from the intrinsic image size and the current scale — the photo
  * can never be dragged out of the viewport.
  */
-export function ZoomableImage({ uri, onTap, accessibilityLabel }: ZoomableImageProps) {
+export function ZoomableImage({
+  uri,
+  onTap,
+  onSwipe,
+  accessibilityLabel,
+}: ZoomableImageProps) {
   const scale = useSharedValue(1);
   const savedScale = useSharedValue(1);
   const translateX = useSharedValue(0);
@@ -65,10 +84,13 @@ export function ZoomableImage({ uri, onTap, accessibilityLabel }: ZoomableImageP
   const imageW = useSharedValue(0);
   const imageH = useSharedValue(0);
   /**
-   * Whether the photo is zoomed in. The pan gesture is only enabled then: at
-   * 1× it would swallow the horizontal swipe that pages to the next photo.
+   * Whether the photo is zoomed in. The pan gesture is only enabled then:
+   * at 1× the finger has to be free for the swipe that pages to the next
+   * photo.
    */
   const canPan = useSharedValue(false);
+  /** The mirror of `canPan`: the swipe only runs while the photo is not zoomed. */
+  const canSwipe = useSharedValue(true);
 
   // Rendered size of the photo inside the container (`contentFit="contain"`).
   const displayedWidth = useDerivedValue(() => {
@@ -97,8 +119,11 @@ export function ZoomableImage({ uri, onTap, accessibilityLabel }: ZoomableImageP
 
   const pinch = usePinchGesture({
     onUpdate: (event) => {
-      scale.value = clamp(savedScale.value * event.scale, 1, MAX_SCALE);
-      canPan.value = scale.value > 1;
+      const next = clamp(savedScale.value * event.scale, 1, MAX_SCALE);
+      scale.value = next;
+      const zoomed = next > 1.01;
+      canPan.value = zoomed;
+      canSwipe.value = !zoomed;
     },
     onDeactivate: () => {
       if (scale.value <= 1.01) {
@@ -109,6 +134,7 @@ export function ZoomableImage({ uri, onTap, accessibilityLabel }: ZoomableImageP
         savedX.value = 0;
         savedY.value = 0;
         canPan.value = false;
+        canSwipe.value = true;
         return;
       }
       savedScale.value = scale.value;
@@ -117,6 +143,7 @@ export function ZoomableImage({ uri, onTap, accessibilityLabel }: ZoomableImageP
       savedX.value = translateX.value;
       savedY.value = translateY.value;
       canPan.value = true;
+      canSwipe.value = false;
     },
   });
 
@@ -124,8 +151,7 @@ export function ZoomableImage({ uri, onTap, accessibilityLabel }: ZoomableImageP
     minDistance: 4,
     // One finger only: a two-finger drag belongs to the pinch gesture.
     maxPointers: 1,
-    // Only a zoomed photo is panned. At 1× the pan would take the swipe away
-    // from the pager that shows the neighbouring photos.
+    // Only a zoomed photo is panned.
     enabled: canPan,
     onUpdate: (event) => {
       translateX.value = clamp(savedX.value + event.translationX, -maxX.value, maxX.value);
@@ -137,12 +163,28 @@ export function ZoomableImage({ uri, onTap, accessibilityLabel }: ZoomableImageP
     },
   });
 
+  /**
+   * The sideways swipe that pages to the neighbouring photo. It lives here
+   * because a gesture handler inside the list takes the touch before the
+   * list can scroll — so the gesture reports the swipe and the gallery moves
+   * the list itself.
+   */
+  const swipe = usePanGesture({
+    enabled: canSwipe,
+    maxPointers: 1,
+    // Activate on a sideways drag, and give up on a mostly vertical one.
+    activeOffsetX: [-SWIPE_ACTIVATION, SWIPE_ACTIVATION],
+    activeOffsetY: [-SWIPE_MAX_VERTICAL, SWIPE_MAX_VERTICAL],
+    onDeactivate: (event) => {
+      const dx = event.translationX;
+      if (Math.abs(dx) < SWIPE_THRESHOLD || !onSwipe) return;
+      scheduleOnRN(onSwipe, dx < 0 ? 'next' : 'prev');
+    },
+  });
+
   const doubleTap = useTapGesture({
     numberOfTaps: 2,
     maxDelay: DOUBLE_TAP_MAX_DELAY_MS,
-    // Without a limit the tap gesture also fires for a swipe (the platform
-    // default ignores the movement), which would page the gallery and hide
-    // the controls at the same time.
     maxDistance: TAP_MAX_DISTANCE,
     onActivate: () => {
       const next = scale.value > 1 ? 1 : DOUBLE_TAP_SCALE;
@@ -152,7 +194,9 @@ export function ZoomableImage({ uri, onTap, accessibilityLabel }: ZoomableImageP
       translateY.value = withTiming(0);
       savedX.value = 0;
       savedY.value = 0;
-      canPan.value = next > 1;
+      const zoomed = next > 1.01;
+      canPan.value = zoomed;
+      canSwipe.value = !zoomed;
     },
   });
 
@@ -167,6 +211,7 @@ export function ZoomableImage({ uri, onTap, accessibilityLabel }: ZoomableImageP
   const gesture = useSimultaneousGestures(
     pinch,
     pan,
+    swipe,
     useExclusiveGestures(doubleTap, singleTap),
   );
 

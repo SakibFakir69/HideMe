@@ -45,13 +45,12 @@ Perf / polish punch list. Ordered by impact.
 
 ### Gaps against DESIGN.md
 
-- [x] **Import progress is not cancelable** (§5.5 says it should be) — done.
-      The batch runs behind a per-job cancellation token: the file being
-      encrypted is written to a `.partial` blob and only moved into place when
-      it is whole, the files imported before the cancel are kept, the
-      interrupted file leaves nothing behind, and the index is written once
-      with the result. The modal distinguishes importing / cancelling /
-      cancelled / completed / failed.
+- [x] **Cancelable import** (§5.5 asks for it) — done. The batch runs behind a
+      per-job cancellation token: the file being encrypted is written to a
+      `.partial` blob and only moved into place when it is whole, the files
+      imported before the cancel are kept, the interrupted file leaves nothing
+      behind, and the index is written once with the result. The modal
+      distinguishes importing / cancelling / cancelled / completed / failed.
 - [ ] **Import completion summary** (§5.5) — a toast or summary of what was
       added.
 - [ ] **Import source rows** (§5.5 lists four: Photos & Videos / Documents /

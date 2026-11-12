@@ -80,9 +80,7 @@ export function ImportProgressModal({ state, onCancel, onDismiss }: ImportProgre
         <View style={[styles.card, { backgroundColor: theme.backgroundElement }]}>
           <View style={styles.headerRow}>
             <ThemedText type="smallBold">{title}</ThemedText>
-            {running && (
-              <ActivityIndicator size="small" color={theme.tint} />
-            )}
+            {cancelling && <ActivityIndicator size="small" color={theme.tint} />}
           </View>
 
           <ThemedText type="small" themeColor="textSecondary">

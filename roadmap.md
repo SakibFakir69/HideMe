@@ -58,6 +58,14 @@ Perf / polish punch list. Ordered by impact.
       Documents).
 - [ ] **Import from the camera** — the row said "From gallery or camera"; only
       the photo library is offered (the copy now says so).
+- [ ] **The auto-lock kills imports that use a system picker** — the photo and
+      document pickers run in their own activity, so the app is backgrounded
+      while they are open. With the default threshold (1 minute) the vault
+      locks before the user comes back, and the import is gone. Found on a
+      device: the picker was open for about a minute and the vault locked on
+      return. The threshold is a security preference, so the fix is not
+      obvious — but as it stands, "Immediately" makes importing impossible and
+      the default makes it unreliable.
 - [ ] **Erase-all with a typed confirmation** (§5.6) — it is a two-button
       alert today.
 - [ ] **Share in select mode** (§5.11 wants Share · Delete · More) — blocked on

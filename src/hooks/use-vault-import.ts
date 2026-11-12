@@ -7,7 +7,7 @@ import { errorMessage, importAssets, type PickedAsset } from '@/lib/vault-store'
 import { getMasterKey } from '@/lib/vault-session';
 import { maybeShowImportInterstitial } from '@/lib/ads';
 import { createImportCancellation, type ImportCancellation } from '@/lib/import-cancellation';
-import { beginPickerGrace } from '@/lib/vault-autolock';
+import { beginPickerGrace, clearPickerGrace } from '@/lib/vault-autolock';
 
 export type ImportKind = 'media' | 'audio' | 'document';
 
@@ -185,6 +185,20 @@ export function useVaultImport(
 
 /** Returns null when the user cancels the picker. */
 async function pickAssets(kind: ImportKind): Promise<PickedAsset[] | null> {
+  // The permission prompt and the picker are both system activities: they
+  // put the app in the background, where the auto-lock would fire. Arm the
+  // grace before the first of them, not just before the picker.
+  beginPickerGrace();
+  try {
+    return await openPicker(kind);
+  } catch (error) {
+    // No picker was shown, so the grace has nothing to cover.
+    clearPickerGrace();
+    throw error;
+  }
+}
+
+async function openPicker(kind: ImportKind): Promise<PickedAsset[] | null> {
   if (kind === 'media') {
     // Android ≤12 needs the runtime grant; 13+ uses the system photo picker
     // (returns granted automatically). iOS always needs the prompt.
@@ -194,7 +208,6 @@ async function pickAssets(kind: ImportKind): Promise<PickedAsset[] | null> {
         'Photo library access is required to import media. Enable it in system Settings → Apps → Calculator → Permissions.',
       );
     }
-    beginPickerGrace();
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images', 'videos'],
       allowsMultipleSelection: true,
@@ -217,7 +230,6 @@ async function pickAssets(kind: ImportKind): Promise<PickedAsset[] | null> {
   }
 
   if (kind === 'audio') {
-    beginPickerGrace();
     const result = await DocumentPicker.getDocumentAsync({
       copyToCacheDirectory: true,
       multiple: true,
@@ -231,7 +243,6 @@ async function pickAssets(kind: ImportKind): Promise<PickedAsset[] | null> {
     }));
   }
 
-  beginPickerGrace();
   const result = await DocumentPicker.getDocumentAsync({
     copyToCacheDirectory: true,
     multiple: true,

@@ -120,6 +120,14 @@ export function beginPickerGrace(): void {
   pickerGraceUntil = Date.now() + PICKER_GRACE_MS;
 }
 
+/**
+ * Closes the picker grace window. Used when no picker was actually shown
+ * (a denied permission, for example) so the grace cannot linger.
+ */
+export function clearPickerGrace(): void {
+  pickerGraceUntil = 0;
+}
+
 async function loadOverride(): Promise<void> {
   try {
     if (!(await SecureStore.isAvailableAsync())) return;

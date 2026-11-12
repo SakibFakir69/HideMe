@@ -1,27 +1,37 @@
 import { Ionicons } from '@expo/vector-icons';
-import { setAudioModeAsync, useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
 import { useEffect } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { Fonts, Palette, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
+type AudioApi = typeof import('expo-audio');
+
+/**
+ * `expo-audio` throws while it is being imported when the native module is
+ * missing (an older build, or a platform without it). Importing it at the top
+ * of this file would take the whole viewer down with it, so it is loaded
+ * lazily and the failure is handled.
+ */
+let cachedAudio: AudioApi | null | undefined;
+
+function getAudioApi(): AudioApi | null {
+  if (cachedAudio === undefined) {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      cachedAudio = require('expo-audio') as AudioApi;
+    } catch {
+      cachedAudio = null;
+    }
+  }
+  return cachedAudio;
+}
+
 interface AudioPlayerProps {
   uri: string;
   name: string;
   /** False when the viewer is showing another page — playback pauses. */
   isActive: boolean;
-}
-
-/** Seconds as `m:ss`, or `h:mm:ss` for long recordings. */
-function formatTime(seconds: number): string {
-  if (!Number.isFinite(seconds) || seconds < 0) return '0:00';
-  const total = Math.floor(seconds);
-  const hours = Math.floor(total / 3600);
-  const minutes = Math.floor((total % 3600) / 60);
-  const rest = total % 60;
-  const pad = (value: number) => String(value).padStart(2, '0');
-  return hours > 0 ? `${hours}:${pad(minutes)}:${pad(rest)}` : `${minutes}:${pad(rest)}`;
 }
 
 /**
@@ -32,14 +42,38 @@ function formatTime(seconds: number): string {
  * taps play, like everywhere else in this app.
  */
 export function AudioPlayer({ uri, name, isActive }: AudioPlayerProps) {
+  const api = getAudioApi();
+  if (!api) {
+    return (
+      <View style={styles.unavailable}>
+        <Ionicons name="musical-notes-outline" size={30} color="#F472B6" />
+        <Text style={styles.unavailableTitle}>Audio playback is unavailable</Text>
+        <Text style={styles.unavailableBody}>
+          This build has no audio support. Update the app and try again.
+        </Text>
+      </View>
+    );
+  }
+  return <AudioStage api={api} uri={uri} name={name} isActive={isActive} />;
+}
+
+function AudioStage({
+  api,
+  uri,
+  name,
+  isActive,
+}: AudioPlayerProps & { api: AudioApi }) {
   const theme = useTheme();
-  const player = useAudioPlayer({ uri });
-  const status = useAudioPlayerStatus(player);
+  const player = api.useAudioPlayer({ uri });
+  const status = api.useAudioPlayerStatus(player);
 
   // Media apps are expected to be heard even with the ringer on silent.
   useEffect(() => {
-    void setAudioModeAsync({ playsInSilentMode: true, interruptionMode: 'mixWithOthers' });
-  }, []);
+    void api.setAudioModeAsync({
+      playsInSilentMode: true,
+      interruptionMode: 'mixWithOthers',
+    });
+  }, [api]);
 
   useEffect(() => {
     if (!isActive) player.pause();
@@ -80,11 +114,18 @@ export function AudioPlayer({ uri, name, isActive }: AudioPlayerProps) {
           accessibilityRole="button"
           accessibilityLabel={playing ? 'Pause' : 'Play'}
           style={({ pressed }) => [styles.playButton, pressed && styles.pressed]}>
-          <Ionicons name={playing ? 'pause' : 'play'} size={28} color="#FFFFFF" style={styles.playIcon} />
+          <Ionicons
+            name={playing ? 'pause' : 'play'}
+            size={28}
+            color="#FFFFFF"
+            style={styles.playIcon}
+          />
         </Pressable>
 
         <Text style={styles.hint}>
-          {status.isLoaded ? 'Plays from the decrypted copy · stays on this device' : 'Loading…'}
+          {status.isLoaded
+            ? 'Plays from the decrypted copy · stays on this device'
+            : 'Loading…'}
         </Text>
       </View>
       <Text style={[styles.notice, { color: theme.textSecondary }]}>
@@ -92,6 +133,17 @@ export function AudioPlayer({ uri, name, isActive }: AudioPlayerProps) {
       </Text>
     </View>
   );
+}
+
+/** `m:ss`, or `h:mm:ss` for long recordings. */
+function formatTime(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds < 0) return '0:00';
+  const total = Math.floor(seconds);
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const rest = total % 60;
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return hours > 0 ? `${hours}:${pad(minutes)}:${pad(rest)}` : `${minutes}:${pad(rest)}`;
 }
 
 const styles = StyleSheet.create({
@@ -173,6 +225,25 @@ const styles = StyleSheet.create({
     fontSize: 12,
     textAlign: 'center',
     maxWidth: 300,
+  },
+  unavailable: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.two,
+    padding: Spacing.four,
+  },
+  unavailableTitle: {
+    color: '#FFFFFF',
+    fontFamily: Fonts.sansSemiBold,
+    fontSize: 16,
+  },
+  unavailableBody: {
+    color: 'rgba(255,255,255,0.6)',
+    fontFamily: Fonts.sans,
+    fontSize: 13,
+    textAlign: 'center',
+    maxWidth: 280,
   },
   pressed: {
     opacity: 0.75,

@@ -2,6 +2,7 @@ import { Redirect, Stack } from 'expo-router';
 
 import { BinReminderSync } from '@/components/vault/bin-reminder-sync';
 import { PrivacyShield } from '@/components/vault/privacy-shield';
+import { ToastHost } from '@/components/ui/toast-host';
 import { useVaultUnlocked } from '@/lib/vault-session';
 
 export default function VaultLayout() {
@@ -21,6 +22,7 @@ export default function VaultLayout() {
         <Stack.Screen name="auto-lock" />
         <Stack.Screen name="app-icon" />
       </Stack>
+      <ToastHost />
     </>
   );
 }

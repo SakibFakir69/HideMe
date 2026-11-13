@@ -18,7 +18,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { ActionSheetModal } from '@/components/vault/action-sheet-modal';
 import { AdBanner } from '@/components/vault/ad-banner';
 import { ChangeCodeModal } from '@/components/vault/change-code-modal';
-import { confirmDestructive } from '@/components/vault/confirm';
+import { ConfirmTypedModal } from '@/components/vault/confirm-typed-modal';
 import { formatBytes } from '@/components/vault/format';
 import { ThemedView } from '@/components/themed-view';
 import { ListRow } from '@/components/ui/list-row';
@@ -81,6 +81,7 @@ export default function VaultSettingsScreen() {
   const [biometricBusy, setBiometricBusy] = useState(false);
   const [changingCode, setChangingCode] = useState(false);
   const [erasing, setErasing] = useState(false);
+  const [eraseOpen, setEraseOpen] = useState(false);
   const [autoLock, setAutoLock] = useState<AutoLockSeconds | null>(null);
   const [themeSheet, setThemeSheet] = useState(false);
   const [remindersOn, setRemindersOn] = useState(false);
@@ -171,12 +172,6 @@ export default function VaultSettingsScreen() {
   );
 
   const onErase = useCallback(async () => {
-    const ok = await confirmDestructive(
-      'Erase all contents',
-      'Every file and folder in the vault will be permanently deleted. Your secret code stays set.',
-      'Erase',
-    );
-    if (!ok) return;
     setErasing(true);
     try {
       await eraseAllContents(getMasterKey());
@@ -311,7 +306,7 @@ export default function VaultSettingsScreen() {
               destructive
               loading={erasing}
               disabled={erasing}
-              onPress={() => void onErase()}
+              onPress={() => setEraseOpen(true)}
             />
           </Group>
 
@@ -368,6 +363,16 @@ export default function VaultSettingsScreen() {
       </SafeAreaView>
 
       <ChangeCodeModal visible={changingCode} onClose={() => setChangingCode(false)} />
+
+      <ConfirmTypedModal
+        visible={eraseOpen}
+        title="Erase all contents"
+        message="Every file and folder in the vault will be permanently deleted. Your secret code stays set."
+        phrase="ERASE"
+        confirmLabel="Erase everything"
+        onConfirm={onErase}
+        onClose={() => setEraseOpen(false)}
+      />
 
       <ActionSheetModal
         visible={themeSheet}

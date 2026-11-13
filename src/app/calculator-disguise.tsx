@@ -1,7 +1,7 @@
 import * as LocalAuthentication from 'expo-local-authentication';
 import { router } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
-import { AppState, StyleSheet, Text, View } from 'react-native';
+import { AppState, ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { CalcKey, type KeyVariant } from '@/components/calc-key';
@@ -167,6 +167,7 @@ export default function CalculatorDisguiseScreen() {
   const [calc, setCalc] = useState<CalcState>({ expr: '', evaluated: false });
   const [lockRemaining, setLockRemaining] = useState(0);
   const [notice, setNotice] = useState<string | null>(null);
+  const [working, setWorking] = useState(false);
   const navigatingRef = useRef(false);
   const biometricBusyRef = useRef(false);
   const verifyingRef = useRef(false);
@@ -198,6 +199,9 @@ export default function CalculatorDisguiseScreen() {
 
         verifyingRef.current = true;
         mark('unlock.start');
+        // The key derivation is the slow part on older devices, so the gate
+        // says so instead of looking frozen.
+        setWorking(true);
         try {
           const masterKey = await unlockWithSecretCode(code);
           if (masterKey === null) {
@@ -219,6 +223,7 @@ export default function CalculatorDisguiseScreen() {
           router.replace('/unlock-success');
         } finally {
           verifyingRef.current = false;
+          setWorking(false);
         }
       })().catch(() => {
         setNotice('Error');
@@ -290,20 +295,31 @@ export default function CalculatorDisguiseScreen() {
   const smallLine =
     lockRemaining > 0
       ? `Locked · ${formatCountdown(lockRemaining)}`
-      : notice !== null
-        ? '= Error'
-        : shownPreview !== null || calc.evaluated
-          ? displayExpr(calc.expr)
-          : '';
+      : working
+        ? '= Working'
+        : notice !== null
+          ? '= Error'
+          : shownPreview !== null || calc.evaluated
+            ? displayExpr(calc.expr)
+            : '';
 
   return (
     <ThemedView style={styles.container}>
       <SafeAreaView style={styles.safeArea}>
         <View style={styles.inner}>
           <View style={styles.display}>
-            <Text style={[styles.preview, { color: theme.textSecondary }]} numberOfLines={1}>
-              {smallLine}
-            </Text>
+            <View style={styles.previewRow}>
+              {working && (
+                <ActivityIndicator
+                  size="small"
+                  color={theme.textSecondary}
+                  style={styles.spinner}
+                />
+              )}
+              <Text style={[styles.preview, { color: theme.textSecondary }]} numberOfLines={1}>
+                {smallLine}
+              </Text>
+            </View>
             <Text
               style={[styles.displayText, { color: theme.text }]}
               numberOfLines={1}
@@ -314,7 +330,7 @@ export default function CalculatorDisguiseScreen() {
             </Text>
           </View>
 
-          <View style={styles.keypad}>
+          <View style={[styles.keypad, working && styles.keypadBusy]}>
             {KEYS.map((row, rowIndex) => (
               <View key={rowIndex} style={styles.row}>
                 {row.map((key) => (
@@ -374,10 +390,23 @@ const styles = StyleSheet.create({
     width: '100%',
     minHeight: 22,
   },
+  previewRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: Spacing.two,
+    width: '100%',
+  },
+  spinner: {
+    transform: [{ scale: 0.7 }],
+  },
   keypad: {
     flex: 2,
     gap: Spacing.two,
     paddingBottom: Spacing.two,
+  },
+  keypadBusy: {
+    opacity: 0.6,
   },
   row: {
     flex: 1,

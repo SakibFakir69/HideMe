@@ -7,9 +7,30 @@ import { errorMessage, importAssets, type PickedAsset } from '@/lib/vault-store'
 import { getMasterKey } from '@/lib/vault-session';
 import { maybeShowImportInterstitial } from '@/lib/ads';
 import { createImportCancellation, type ImportCancellation } from '@/lib/import-cancellation';
+import { showToast } from '@/lib/toast';
 import { beginPickerGrace, clearPickerGrace } from '@/lib/vault-autolock';
 
-export type ImportKind = 'media' | 'audio' | 'document';
+export type ImportKind = 'media' | 'camera' | 'audio' | 'document' | 'other';
+
+/**
+ * The MIME types the "Documents" row offers. "Other files" takes anything,
+ * so this only narrows the common document formats.
+ */
+const DOCUMENT_TYPES = [
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.ms-powerpoint',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  'application/rtf',
+  'application/epub+zip',
+  'application/json',
+  'text/plain',
+  'text/markdown',
+  'text/csv',
+];
 
 export type ImportJobStatus =
   | 'importing'
@@ -76,7 +97,25 @@ export function useVaultImport(
     const summary = summaryRef.current;
     summaryRef.current = null;
     setState(null);
-    if (summary) void onImported?.(summary);
+    if (summary) {
+      // The summary survives the screen that raised it: the toast lives in the
+      // vault layout, so the user still sees what was added.
+      if (summary.status === 'completed') {
+        showToast(
+          `${summary.completed} file${summary.completed === 1 ? '' : 's'} added to your vault.`,
+          'success',
+        );
+      } else if (summary.status === 'cancelled') {
+        showToast(
+          summary.completed > 0
+            ? `Import cancelled — ${summary.completed} file${summary.completed === 1 ? '' : 's'} kept.`
+            : 'Import cancelled.',
+        );
+      } else {
+        showToast(summary.message ?? 'The import could not be finished.', 'error');
+      }
+      void onImported?.(summary);
+    }
   }, [onImported]);
 
   const runImport = useCallback(
@@ -229,6 +268,34 @@ async function openPicker(kind: ImportKind): Promise<PickedAsset[] | null> {
     });
   }
 
+  if (kind === 'camera') {
+    // The camera is the system camera app, so the app does not hold the
+    // camera permission itself — only the runtime grant is asked for.
+    const permission = await ImagePicker.requestCameraPermissionsAsync();
+    if (!permission.granted) {
+      throw new Error(
+        'Camera access is required to take a photo. Enable it in system Settings → Apps → Calculator → Permissions.',
+      );
+    }
+    const result = await ImagePicker.launchCameraAsync({
+      mediaTypes: ['images'],
+      quality: 0.9,
+    });
+    if (result.canceled) return null;
+    const asset = result.assets[0];
+    if (!asset) return null;
+    const mime = asset.mimeType ?? 'image/jpeg';
+    return [
+      {
+        uri: asset.uri,
+        name: asset.fileName?.trim() || `photo${extFromMime(mime)}`,
+        mime,
+        width: asset.width || undefined,
+        height: asset.height || undefined,
+      },
+    ];
+  }
+
   if (kind === 'audio') {
     const result = await DocumentPicker.getDocumentAsync({
       copyToCacheDirectory: true,
@@ -246,7 +313,7 @@ async function openPicker(kind: ImportKind): Promise<PickedAsset[] | null> {
   const result = await DocumentPicker.getDocumentAsync({
     copyToCacheDirectory: true,
     multiple: true,
-    type: '*/*',
+    type: kind === 'document' ? DOCUMENT_TYPES : '*/*',
   });
   if (result.canceled) return null;
   return result.assets.map((asset, i) => ({

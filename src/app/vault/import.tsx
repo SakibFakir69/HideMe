@@ -40,6 +40,15 @@ export default function ImportScreen() {
               onPress={() => void importAssets('media', null)}
             />
             <ListRow
+              icon="camera"
+              iconColor="#F59E0B"
+              title="Take a photo"
+              subtitle="With the camera"
+              divider
+              disabled={busy}
+              onPress={() => void importAssets('camera', null)}
+            />
+            <ListRow
               icon="musical-notes"
               iconColor="#EC4899"
               title="Audio"
@@ -51,10 +60,19 @@ export default function ImportScreen() {
             <ListRow
               icon="document-text"
               iconColor="#10B981"
-              title="Documents & other files"
-              subtitle="PDF, TXT, ZIP, APK, etc."
+              title="Documents"
+              subtitle="PDF, DOCX, XLSX, TXT, etc."
+              divider
               disabled={busy}
               onPress={() => void importAssets('document', null)}
+            />
+            <ListRow
+              icon="folder-open"
+              iconColor="#3B82F6"
+              title="Other files"
+              subtitle="Any file type"
+              disabled={busy}
+              onPress={() => void importAssets('other', null)}
             />
           </View>
 

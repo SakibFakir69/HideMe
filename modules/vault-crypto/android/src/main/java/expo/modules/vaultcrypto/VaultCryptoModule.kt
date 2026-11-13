@@ -3,8 +3,11 @@ package expo.modules.vaultcrypto
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 import java.security.NoSuchAlgorithmException
+import javax.crypto.Mac
 import javax.crypto.SecretKeyFactory
 import javax.crypto.spec.PBEKeySpec
+import javax.crypto.spec.SecretKeySpec
+import kotlin.math.min
 
 /**
  * Hardware-accelerated PBKDF2 for the vault PIN.
@@ -14,8 +17,14 @@ import javax.crypto.spec.PBEKeySpec
  * same PBKDF2-HMAC-SHA256 in native code, which takes a few hundred
  * milliseconds for the same parameters and produces identical bytes.
  *
+ * Devices older than Android 8 have no platform PBKDF2-HMAC-SHA256, and the
+ * JS fallback there costs minutes per unlock. `javax.crypto.Mac` has shipped
+ * HmacSHA256 since API 1, so the module derives the key itself with the same
+ * construction (RFC 8018) when the platform provider is missing: still
+ * native code, still off the JS thread, but seconds instead of minutes.
+ *
  * Availability is reported to JS so it can fall back to the JS implementation
- * on older Android versions, iOS, web and Expo Go.
+ * on old Android versions, iOS, web and Expo Go.
  *
  * The salt and the derived key travel as lowercase hex so every platform
  * shares one wire format and the representation matches the `salt`/`hash`
@@ -26,12 +35,9 @@ class VaultCryptoModule : Module() {
     Name("VaultCrypto")
 
     Function("isAvailable") {
-      try {
-        SecretKeyFactory.getInstance(ALGORITHM)
-        true
-      } catch (e: NoSuchAlgorithmException) {
-        false
-      }
+      // Either the platform provider or the portable construction can derive
+      // the key, and the portable path works on every Android version.
+      hasPlatformProvider() || hasHmacSha256()
     }
 
     AsyncFunction("pbkdf2") { password: String, saltHex: String, iterations: Int, keyLength: Int ->
@@ -40,12 +46,22 @@ class VaultCryptoModule : Module() {
 
       val salt = hexToBytes(saltHex)
       val chars = password.toCharArray()
-      val spec = PBEKeySpec(chars, salt, iterations, keyLength * 8)
+      val bytes = password.toByteArray(Charsets.UTF_8)
       try {
-        SecretKeyFactory.getInstance(ALGORITHM).generateSecret(spec).encoded.toHex()
+        val derived = if (hasPlatformProvider()) {
+          val spec = PBEKeySpec(chars, salt, iterations, keyLength * 8)
+          try {
+            SecretKeyFactory.getInstance(ALGORITHM).generateSecret(spec).encoded
+          } finally {
+            spec.clearPassword()
+          }
+        } else {
+          pbkdf2Portable(bytes, salt, iterations, keyLength)
+        }
+        derived.toHex()
       } finally {
-        spec.clearPassword()
         chars.fill('\u0000')
+        bytes.fill(0)
       }
     }
   }
@@ -53,7 +69,73 @@ class VaultCryptoModule : Module() {
   private companion object {
     /** PBKDF2-HMAC-SHA256 is available from Android 8.0 (API 26). */
     const val ALGORITHM = "PBKDF2WithHmacSHA256"
+    const val HMAC_ALGORITHM = "HmacSHA256"
   }
+}
+
+/** Is the platform PBKDF2-HMAC-SHA256 provider present? */
+private fun hasPlatformProvider(): Boolean {
+  return try {
+    SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256")
+    true
+  } catch (e: NoSuchAlgorithmException) {
+    false
+  }
+}
+
+/** Is the HMAC-SHA256 primitive present? It has shipped since API 1. */
+private fun hasHmacSha256(): Boolean {
+  return try {
+    Mac.getInstance("HmacSHA256")
+    true
+  } catch (e: NoSuchAlgorithmException) {
+    false
+  }
+}
+
+/**
+ * PBKDF2-HMAC-SHA256 (RFC 8018) built on `javax.crypto.Mac`.
+ *
+ * Used on Android versions without the platform PBKDF2 provider. The
+ * password is the UTF-8 byte sequence, which is what the platform provider
+ * and the JS implementation use as well, so all three agree on the output.
+ */
+private fun pbkdf2Portable(password: ByteArray, salt: ByteArray, iterations: Int, dkLen: Int): ByteArray {
+  val mac = Mac.getInstance("HmacSHA256")
+  mac.init(SecretKeySpec(password, "HmacSHA256"))
+  val hLen = mac.macLength
+  val blocks = (dkLen + hLen - 1) / hLen
+  val out = ByteArray(dkLen)
+
+  val block = ByteArray(salt.size + 4)
+  salt.copyInto(block)
+
+  for (index in 1..blocks) {
+    block[salt.size] = (index ushr 24).toByte()
+    block[salt.size + 1] = (index ushr 16).toByte()
+    block[salt.size + 2] = (index ushr 8).toByte()
+    block[salt.size + 3] = index.toByte()
+
+    mac.reset()
+    mac.update(block)
+    var u = mac.doFinal()
+    val t = u.copyOf()
+
+    for (round in 2..iterations) {
+      mac.reset()
+      mac.update(u)
+      u = mac.doFinal()
+      for (i in t.indices) {
+        t[i] = (t[i].toInt() xor u[i].toInt()).toByte()
+      }
+    }
+
+    val offset = (index - 1) * hLen
+    val length = min(hLen, dkLen - offset)
+    System.arraycopy(t, 0, out, offset, length)
+  }
+
+  return out
 }
 
 /** Decodes a lowercase or uppercase hex string into bytes. */

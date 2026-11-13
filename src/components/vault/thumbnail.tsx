@@ -11,7 +11,11 @@ import { loadThumb, type VaultItem } from '@/lib/vault-store';
 
 interface ThumbnailProps {
   item: VaultItem;
+  /** Square tile size. Ignored when `width`/`height` are given. */
   size: number;
+  /** Explicit tile size, for grids that keep the real photo ratio. */
+  width?: number;
+  height?: number;
 }
 
 /**
@@ -23,10 +27,13 @@ interface ThumbnailProps {
  * while the thumb decrypts, so the grid never flashes a spinner or shifts
  * the layout once the image arrives.
  */
-export function Thumbnail({ item, size }: ThumbnailProps) {
+export function Thumbnail({ item, size, width, height }: ThumbnailProps) {
   const theme = useTheme();
   const [uri, setUri] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
+
+  const boxWidth = width ?? size;
+  const boxHeight = height ?? size;
 
   useEffect(() => {
     if (item.kind !== 'photo') return;
@@ -52,7 +59,7 @@ export function Thumbnail({ item, size }: ThumbnailProps) {
       style={[
         styles.box,
         styles.center,
-        size > 0 && { width: size, height: size },
+        boxWidth > 0 && { width: boxWidth, height: boxHeight },
         { backgroundColor: theme.backgroundElement },
       ]}>
       {item.kind === 'photo' &&

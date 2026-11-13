@@ -60,3 +60,27 @@ export async function shareVaultFile(
     release();
   }
 }
+
+/**
+ * Shares a file that is already a readable temporary artefact (the export
+ * archive), so it is handed over where it lies instead of being copied.
+ */
+export async function sharePreparedFile(
+  file: File,
+  options: { mime: string; title: string },
+): Promise<ShareResult> {
+  const release = holdPlaintextPurge();
+  try {
+    const Sharing = await import('expo-sharing');
+    if (!(await Sharing.isAvailableAsync())) return 'unavailable';
+    await Sharing.shareAsync(file.uri, {
+      mimeType: options.mime || undefined,
+      dialogTitle: options.title,
+    });
+    return 'shared';
+  } catch {
+    return 'failed';
+  } finally {
+    release();
+  }
+}

@@ -5,8 +5,9 @@ import { Alert, FlatList, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { confirmDestructive } from '@/components/vault/confirm';
-import { ItemTile } from '@/components/vault/item-tile';
+import { PhotoRow, usePhotoRows } from '@/components/vault/photo-grid';
 import { SelectionBar } from '@/components/vault/selection-bar';
+import { SkeletonGrid } from '@/components/vault/skeleton-grid';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Chip } from '@/components/ui/chip';
@@ -14,8 +15,10 @@ import { Fab } from '@/components/ui/fab';
 import { SectionTitle } from '@/components/ui/section-title';
 import { Fonts, MaxContentWidth, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
-import { GRID_GAP, useGridColumns } from '@/hooks/use-grid-columns';
+import { GRID_GAP } from '@/hooks/use-grid-columns';
 import { useVaultIndex } from '@/hooks/use-vault-index';
+import { exportItemsToZip } from '@/lib/export-zip';
+import { sharePreparedFile } from '@/lib/share';
 import { setBrowseList } from '@/lib/vault-browse';
 import { getMasterKey } from '@/lib/vault-session';
 import { moveItemsToBin, restoreItems, searchItems, type VaultItem } from '@/lib/vault-store';
@@ -29,6 +32,7 @@ export default function GalleryScreen() {
   const { index, loading } = useVaultIndex();
   const [filter, setFilter] = useState<MediaFilter>('all');
   const [selected, setSelected] = useState<Set<string> | null>(null);
+  const [sharing, setSharing] = useState(false);
   const selectMode = selected !== null;
 
   const items = useMemo(() => {
@@ -41,7 +45,9 @@ export default function GalleryScreen() {
     return filter === 'all' ? media : media.filter((it) => it.kind === filter);
   }, [index, filter]);
 
-  const columns = useGridColumns(NUM_COLUMNS);
+  // The grid keeps the real photo ratio: every row is justified to the full
+  // width, so the tiles are not a uniform square crop.
+  const rows = usePhotoRows(items, NUM_COLUMNS);
 
   // Stable callbacks: the grid re-renders on every index mutation, and new
   // function identities would defeat the memoized ItemTile.
@@ -101,15 +107,43 @@ export default function GalleryScreen() {
     }
   };
 
+  const onShareSelected = async () => {
+    if (!selected || selected.size === 0 || !index) return;
+    const chosen = index.items.filter((item) => selected.has(item.id));
+    if (chosen.length === 0) return;
+    setSharing(true);
+    try {
+      const result = await exportItemsToZip(chosen);
+      if (result.status !== 'ok') {
+        Alert.alert(
+          result.status === 'too-large' ? 'Export too large' : 'Could not export',
+          result.message,
+        );
+        return;
+      }
+      const shared = await sharePreparedFile(result.file, {
+        mime: 'application/zip',
+        title: `Share ${result.count} file${result.count === 1 ? '' : 's'}`,
+      });
+      if (shared === 'unavailable') {
+        Alert.alert('Sharing isn’t available', 'This build can’t open the system share sheet.');
+      } else if (shared === 'failed') {
+        Alert.alert('Could not share', 'The archive could not be handed to another app.');
+      }
+    } catch (err) {
+      Alert.alert('Could not share', err instanceof Error ? err.message : String(err));
+    } finally {
+      setSharing(false);
+    }
+  };
+
   return (
     <ThemedView style={styles.container}>
       <SafeAreaView style={styles.safeArea} edges={['top']}>
         <FlatList
           key={`cols-${NUM_COLUMNS}`}
-          data={items}
-          keyExtractor={(item) => item.id}
-          numColumns={NUM_COLUMNS}
-          columnWrapperStyle={items.length >= 1 ? styles.gridRow : undefined}
+          data={rows}
+          keyExtractor={(row) => row.key}
           contentContainerStyle={[styles.listContent, selectMode && styles.listContentSelecting]}
           style={styles.listFlex}
           ListHeaderComponent={
@@ -146,7 +180,9 @@ export default function GalleryScreen() {
             </View>
           }
           ListEmptyComponent={
-            loading ? undefined : (
+            loading ? (
+              <SkeletonGrid columns={NUM_COLUMNS} rows={3} />
+            ) : (
               <View style={styles.emptyBox}>
                 <Ionicons name="images-outline" size={30} color={theme.textSecondary} />
                 <ThemedText type="small" themeColor="textSecondary" style={styles.emptyText}>
@@ -156,17 +192,16 @@ export default function GalleryScreen() {
               </View>
             )
           }
-          renderItem={({ item }) => (
-            <ItemTile
-              item={item}
-              size={columns}
+          renderItem={({ item: row }) => (
+            <PhotoRow
+              row={row}
               selectMode={selectMode}
-              selected={selected?.has(item.id) ?? false}
+              isSelected={(id) => selected?.has(id) ?? false}
               onPress={handlePress}
               onLongPress={handleLongPress}
             />
           )}
-          initialNumToRender={12}
+          initialNumToRender={6}
           windowSize={7}
           removeClippedSubviews
         />
@@ -177,6 +212,7 @@ export default function GalleryScreen() {
             onCancel={() => setSelected(null)}
             onSelectAll={() => setSelected(new Set(items.map((it) => it.id)))}
             onMove={undefined}
+            onShare={sharing ? undefined : () => void onShareSelected()}
             onDelete={() => void onDeleteSelected()}
           />
         )}

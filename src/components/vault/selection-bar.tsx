@@ -12,6 +12,8 @@ interface SelectionBarProps {
   onCancel: () => void;
   onSelectAll: () => void;
   onMove?: () => void;
+  /** Shares the selection as a zip archive. */
+  onShare?: () => void;
   onDelete: () => void;
 }
 
@@ -22,6 +24,7 @@ export function SelectionBar({
   onCancel,
   onSelectAll,
   onMove,
+  onShare,
   onDelete,
 }: SelectionBarProps) {
   const theme = useTheme();
@@ -61,6 +64,16 @@ export function SelectionBar({
           style={({ pressed }) => [styles.action, pressed && styles.pressed]}>
           <Ionicons name="folder-outline" size={16} color={theme.text} />
           <ThemedText type="small">Move</ThemedText>
+        </Pressable>
+      )}
+      {onShare && (
+        <Pressable
+          onPress={onShare}
+          accessibilityRole="button"
+          accessibilityLabel={`Share ${count} selected`}
+          style={({ pressed }) => [styles.action, pressed && styles.pressed]}>
+          <Ionicons name="share-outline" size={16} color={theme.text} />
+          <ThemedText type="small">Share</ThemedText>
         </Pressable>
       )}
       <Pressable

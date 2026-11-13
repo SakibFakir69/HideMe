@@ -1,7 +1,9 @@
 import type { Product, Purchase } from 'expo-iap';
+import { Platform } from 'react-native';
 
 import { PREMIUM_PRODUCT_ID } from '@/constants/premium';
-import { grantPremium, isPremium } from './premium';
+import { grantPremium, isPremium, revokePremium } from './premium';
+import { verifyPurchase } from './purchase-verification';
 
 /**
  * Store bridge for the one-time premium purchase.
@@ -44,6 +46,7 @@ function bindListeners(iap: IapModule): void {
         // already finished / transient failure — entitlement stays granted
       }
       emitSuccess(purchase);
+      await confirmWithServer(purchase);
     })();
   });
 
@@ -51,6 +54,37 @@ function bindListeners(iap: IapModule): void {
     if (iap.isUserCancelledError(error)) return;
     emitError(iap.getUserFriendlyErrorMessage(error));
   });
+}
+
+/**
+ * Checks the purchase with the verification endpoint, when one is configured.
+ *
+ * Only an explicit rejection revokes the entitlement — a network failure or an
+ * unreachable endpoint keeps the local state, because a user who paid must
+ * never lose premium because a server was down.
+ */
+async function confirmWithServer(purchase: Purchase): Promise<void> {
+  const token = purchaseTokenOf(purchase);
+  if (!token) return;
+  const outcome = await verifyPurchase({
+    productId: purchase.productId,
+    platform: Platform.OS === 'ios' ? 'ios' : 'android',
+    token,
+    transactionId: purchase.transactionId ?? '',
+  });
+  if (outcome === 'invalid') {
+    await revokePremium();
+  }
+}
+
+/** The store's purchase token (Android) or transaction id (iOS). */
+function purchaseTokenOf(purchase: Purchase): string | null {
+  const record = purchase as unknown as Record<string, unknown>;
+  const candidates = [record.purchaseToken, record.transactionId, record.transactionReceipt];
+  for (const candidate of candidates) {
+    if (typeof candidate === 'string' && candidate.length > 0) return candidate;
+  }
+  return null;
 }
 
 async function ensureConnection(): Promise<IapModule | null> {
@@ -126,6 +160,7 @@ export async function restorePremium(): Promise<RestoreResult> {
     } catch {
       // entitlement already granted
     }
+    await confirmWithServer(owned);
     return 'restored';
   } catch {
     return 'unavailable';

@@ -355,6 +355,26 @@ export default function ItemScreen() {
             )}
           </View>
         </LinearGradient>
+
+        <LinearGradient
+          colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0.72)', 'rgba(0,0,0,0.92)']}
+          locations={[0, 0.42, 1]}
+          style={[styles.bottomScrim, { paddingBottom: insets.bottom + Spacing.two }]}>
+          <View style={styles.actionRow}>
+            <ActionButton icon="share-outline" label="Share" onPress={() => void onShare()} />
+            <ActionButton
+              icon="trash-outline"
+              label="Delete"
+              destructive
+              onPress={() => void onDelete()}
+            />
+            <ActionButton
+              icon="ellipsis-horizontal"
+              label="More"
+              onPress={() => setMenuOpen(true)}
+            />
+          </View>
+        </LinearGradient>
       </Animated.View>
 
       <ActionSheetModal
@@ -753,6 +773,33 @@ function RoundButton({
   );
 }
 
+function ActionButton({
+  icon,
+  label,
+  onPress,
+  destructive,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  onPress: () => void;
+  destructive?: boolean;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      style={({ pressed }) => [styles.actionButton, pressed && styles.pressed]}>
+      <Ionicons
+        name={icon}
+        size={20}
+        color={destructive ? '#EF4444' : '#FFFFFF'}
+      />
+      <Text style={styles.actionLabel}>{label}</Text>
+    </Pressable>
+  );
+}
+
 function MoveToFolderSheet({
   visible,
   item,
@@ -836,6 +883,32 @@ const styles = StyleSheet.create({
   topScrim: {
     paddingHorizontal: Spacing.three,
     paddingBottom: Spacing.five,
+  },
+  bottomScrim: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    paddingHorizontal: Spacing.three,
+    paddingTop: Spacing.five,
+  },
+  actionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-around',
+  },
+  actionButton: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.one,
+    paddingVertical: Spacing.one,
+    paddingHorizontal: Spacing.three,
+    minWidth: 88,
+  },
+  actionLabel: {
+    color: '#FFFFFF',
+    fontFamily: Fonts.sansMedium,
+    fontSize: 12,
   },
   headerRow: {
     flexDirection: 'row',

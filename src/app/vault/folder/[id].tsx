@@ -2,7 +2,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import {
-  ActivityIndicator,
   Alert,
   FlatList,
   Pressable,
@@ -20,6 +19,7 @@ import { MoveItemsSheet } from '@/components/vault/move-items-sheet';
 import { NamePromptModal } from '@/components/vault/name-prompt-modal';
 import { SearchBar } from '@/components/vault/search-bar';
 import { SelectionBar } from '@/components/vault/selection-bar';
+import { SkeletonGrid } from '@/components/vault/skeleton-grid';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
@@ -195,7 +195,7 @@ export default function FolderScreen() {
     if (loading) {
       return (
         <View style={styles.emptyBox}>
-          <ActivityIndicator color={theme.textSecondary} />
+          <SkeletonGrid columns={NUM_COLUMNS} rows={3} />
         </View>
       );
     }

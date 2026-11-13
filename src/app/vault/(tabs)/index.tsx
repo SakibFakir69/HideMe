@@ -3,7 +3,6 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import {
-  ActivityIndicator,
   Alert,
   FlatList,
   Pressable,
@@ -21,6 +20,7 @@ import { MoveItemsSheet } from '@/components/vault/move-items-sheet';
 import { NamePromptModal } from '@/components/vault/name-prompt-modal';
 import { SearchBar } from '@/components/vault/search-bar';
 import { SelectionBar } from '@/components/vault/selection-bar';
+import { SkeletonGrid } from '@/components/vault/skeleton-grid';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { CategoryTile } from '@/components/ui/category-tile';
@@ -327,7 +327,7 @@ export default function VaultHomeScreen() {
     if (loading) {
       return (
         <View style={styles.emptyBox}>
-          <ActivityIndicator color={theme.tint} />
+          <SkeletonGrid columns={NUM_COLUMNS} rows={3} />
         </View>
       );
     }

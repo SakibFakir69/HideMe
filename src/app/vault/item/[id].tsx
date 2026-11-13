@@ -9,7 +9,6 @@ import {
   ActivityIndicator,
   Alert,
   Animated,
-  FlatList,
   Pressable,
   StatusBar,
   StyleSheet,
@@ -17,6 +16,7 @@ import {
   View,
   useWindowDimensions,
 } from 'react-native';
+import { FlatList } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ActionSheetModal, type SheetAction } from '@/components/vault/action-sheet-modal';

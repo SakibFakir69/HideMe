@@ -1,6 +1,6 @@
 import { Image } from 'expo-image';
 import { useEffect, useRef } from 'react';
-import { Pressable, StyleSheet, type LayoutChangeEvent } from 'react-native';
+import { Pressable, StyleSheet, type GestureResponderEvent, type LayoutChangeEvent } from 'react-native';
 import {
   GestureDetector,
   usePanGesture,
@@ -14,6 +14,7 @@ import Animated, {
   useSharedValue,
   withTiming,
 } from 'react-native-reanimated';
+import { scheduleOnRN } from 'react-native-worklets';
 
 const MAX_SCALE = 4;
 const DOUBLE_TAP_SCALE = 2.5;
@@ -28,6 +29,12 @@ const DOUBLE_TAP_MAX_DELAY_MS = 250;
  * default is unlimited, so a swipe would toggle the controls as well.
  */
 const TAP_MAX_DISTANCE = 12;
+/** How far the finger has to travel sideways before the photo pages. */
+const SWIPE_THRESHOLD = 40;
+/** How far sideways the finger has to travel before the swipe is tracked. */
+const SWIPE_ACTIVATION = 12;
+/** A mostly vertical drag must not page the gallery. */
+const SWIPE_MAX_VERTICAL = 400;
 
 /** Clamp helper that can be called from a worklet. */
 function clamp(value: number, min: number, max: number): number {
@@ -41,9 +48,17 @@ interface ZoomableImageProps {
   uri: string;
   /** Fired on a single tap (a double tap zooms instead). */
   onTap: () => void;
+  /**
+   * Fired when the photo is swiped sideways. The gallery listens to this
+   * instead of scrolling itself: a gesture handler inside a list takes the
+   * touch before the list can page.
+   */
+  onSwipe?: (direction: SwipeDirection) => void;
   /** Screen-reader label for the photo. */
   accessibilityLabel: string;
 }
+
+export type SwipeDirection = 'next' | 'prev';
 
 /**
  * Full-screen photo with pinch-to-zoom, drag-to-pan and double-tap zoom.
@@ -61,7 +76,12 @@ interface ZoomableImageProps {
  * - The taps are plain React, not gesture handlers: a gesture handler on the
  *   photo claims the touch and the list can no longer page.
  */
-export function ZoomableImage({ uri, onTap, accessibilityLabel }: ZoomableImageProps) {
+export function ZoomableImage({
+  uri,
+  onTap,
+  onSwipe,
+  accessibilityLabel,
+}: ZoomableImageProps) {
   const scale = useSharedValue(1);
   const savedScale = useSharedValue(1);
   const translateX = useSharedValue(0);
@@ -74,8 +94,12 @@ export function ZoomableImage({ uri, onTap, accessibilityLabel }: ZoomableImageP
   const imageH = useSharedValue(0);
   /** Whether the photo is zoomed in. The pan is only enabled then. */
   const canPan = useSharedValue(false);
+  /** The mirror of `canPan`: the swipe only runs while the photo is not zoomed. */
+  const canSwipe = useSharedValue(true);
   /** Pending single tap, cancelled when a second tap turns it into a double. */
   const tapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** Where the finger went down, so a drag is not mistaken for a tap. */
+  const pressStart = useRef({ x: 0, y: 0 });
 
   useEffect(
     () => () => {
@@ -118,14 +142,18 @@ export function ZoomableImage({ uri, onTap, accessibilityLabel }: ZoomableImageP
     translateY.value = withTiming(0);
     savedX.value = 0;
     savedY.value = 0;
-    canPan.value = next > 1.01;
+    const zoomed = next > 1.01;
+    canPan.value = zoomed;
+    canSwipe.value = !zoomed;
   };
 
   const pinch = usePinchGesture({
     onUpdate: (event) => {
       const next = clamp(savedScale.value * event.scale, 1, MAX_SCALE);
       scale.value = next;
-      canPan.value = next > 1.01;
+      const zoomed = next > 1.01;
+      canPan.value = zoomed;
+      canSwipe.value = !zoomed;
     },
     onDeactivate: () => {
       if (scale.value <= 1.01) {
@@ -138,6 +166,7 @@ export function ZoomableImage({ uri, onTap, accessibilityLabel }: ZoomableImageP
       savedX.value = translateX.value;
       savedY.value = translateY.value;
       canPan.value = true;
+      canSwipe.value = false;
     },
   });
 
@@ -157,6 +186,25 @@ export function ZoomableImage({ uri, onTap, accessibilityLabel }: ZoomableImageP
     },
   });
 
+  /**
+   * The sideways swipe that pages to the neighbouring photo. It lives here
+   * because a gesture handler inside a list takes the touch before the list
+   * can scroll — so the gesture reports the swipe and the gallery moves the
+   * list itself.
+   */
+  const swipe = usePanGesture({
+    enabled: canSwipe,
+    maxPointers: 1,
+    // Activate on a sideways drag and give up on a mostly vertical one.
+    activeOffsetX: [-SWIPE_ACTIVATION, SWIPE_ACTIVATION],
+    activeOffsetY: [-SWIPE_MAX_VERTICAL, SWIPE_MAX_VERTICAL],
+    onDeactivate: (event) => {
+      const dx = event.translationX;
+      if (Math.abs(dx) < SWIPE_THRESHOLD || !onSwipe) return;
+      scheduleOnRN(onSwipe, dx < 0 ? 'next' : 'prev');
+    },
+  });
+
   /** The second double tap zooms back out; the first one is handled below. */
   const doubleTap = useTapGesture({
     numberOfTaps: 2,
@@ -168,13 +216,19 @@ export function ZoomableImage({ uri, onTap, accessibilityLabel }: ZoomableImageP
     },
   });
 
-  const gesture = useSimultaneousGestures(pinch, pan, doubleTap);
+  const gesture = useSimultaneousGestures(pinch, pan, swipe, doubleTap);
 
   /**
    * A plain tap toggles the controls, a double tap zooms. The single tap waits
    * for the double tap window, so the controls appear a moment later.
+   *
+   * A drag is not a tap: the finger may travel far while the photo pages, and
+   * the chrome must not toggle on the way.
    */
-  const handlePress = () => {
+  const handlePress = (event: GestureResponderEvent) => {
+    const dx = event.nativeEvent.pageX - pressStart.current.x;
+    const dy = event.nativeEvent.pageY - pressStart.current.y;
+    if (Math.abs(dx) > TAP_MAX_DISTANCE || Math.abs(dy) > TAP_MAX_DISTANCE) return;
     if (tapTimer.current) {
       clearTimeout(tapTimer.current);
       tapTimer.current = null;
@@ -186,6 +240,10 @@ export function ZoomableImage({ uri, onTap, accessibilityLabel }: ZoomableImageP
       tapTimer.current = null;
       onTap();
     }, DOUBLE_TAP_MAX_DELAY_MS);
+  };
+
+  const handlePressIn = (event: GestureResponderEvent) => {
+    pressStart.current = { x: event.nativeEvent.pageX, y: event.nativeEvent.pageY };
   };
 
   const animatedStyle = useAnimatedStyle(() => ({
@@ -206,6 +264,7 @@ export function ZoomableImage({ uri, onTap, accessibilityLabel }: ZoomableImageP
       <Animated.View style={[StyleSheet.absoluteFill, animatedStyle]} onLayout={onLayout}>
         <Pressable
           style={StyleSheet.absoluteFill}
+          onPressIn={handlePressIn}
           onPress={handlePress}
           accessible
           accessibilityRole="image"

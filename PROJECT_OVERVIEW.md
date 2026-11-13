@@ -299,9 +299,11 @@ The tree is clean. Recent commits, newest first:
 
 | Commit | What |
 |---|---|
+| `6e8b4bf` | The pager uses the gesture-handler list, so the photo's swipe reaches it (verified on the emulator: 1/9 → 2/9 → back, chrome untouched) |
+| `c2a9f0b` | Paging driven by the photo's swipe; a drag no longer toggles the chrome |
 | `7b30cf9` | Picker grace armed before the permission prompt and dropped when no picker opens |
 | `3e832b6` | Auto-lock no longer kills an import that uses a system picker (bounded picker grace) |
-| `146ad61` | The list pages natively again; the photo taps are plain Pressables, the pinch/pan stay gestures (verified on the emulator) |
+| `146ad61` | The list pages natively again; the photo taps are plain Pressables, the pinch/pan stay gestures |
 | `1de7495` | Docs: the gesture-driven pager and the emulator check |
 | `4088f95` | Photo pager driven by the photo's own swipe gesture |
 | `c0ba486` | Docs: auto-lock/picker interaction found on device |

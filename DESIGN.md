@@ -143,15 +143,19 @@ Root Stack
 
 ### 5.4 Media Gallery
 - Header: back, title, **Select** action. Filter chips: All · Photos · Videos.
-- Responsive grid/masonry; video tiles show duration badge (`0:15`).
+- **Justified grid**: every row keeps the real aspect ratio of its photos and fills the
+  full width — a row of landscapes is short, a row of portraits is tall. Video tiles show
+  the duration badge (`0:15`).
 - Long-press or Select → multi-select mode (see 5.11).
 
 ### 5.5 Import Files
 - Header: back + "Import Files". Search ("Search documents…").
 - Source rows, each icon + title + subtitle:
   - Photos & Videos — From your photo library
+  - Take a photo — With the camera
   - Audio — MP3, WAV, etc.
-  - Documents & other files — PDF, TXT, ZIP, APK, etc.
+  - Documents — PDF, DOCX, XLSX, TXT, etc.
+  - Other files — Any file type
 - Import shows a **progress modal** (per-file %, cancelable). Completion: toast/summary.
 - **Cancel** (implemented): the modal carries a Cancel button while the batch runs.
   - *Importing* — progress bar, per-file %, current file name, **Cancel** enabled.
@@ -173,7 +177,8 @@ Root Stack
   - About HideMe
 - Section **Appearance:** Theme (System / Light / Dark)
 - Bottom: premium/upgrade banner (crown, "Keep your data safe — Upgrade to Premium")
-- Danger zone: **Erase all data** with typed confirmation (from current app; not on board).
+- Danger zone: **Erase all data** with typed confirmation — the destructive button only
+  unlocks once the word ERASE is typed.
 
 ### 5.7 Rewarded Ad — Pause Auto-lock
 - Bottom sheet: close X, gradient gift badge, headline "Pause auto-lock for 1 hour", body
@@ -207,13 +212,16 @@ Root Stack
   the page takes the touch, so the photo reports the swipe and the gallery moves the list), and at 1× only —
   a zoomed photo pans instead.
 - Photos zoom: pinch (1×–4×), double-tap to toggle, clamped so the image cannot be dragged out of frame.
-- Share/Delete live in the More sheet (Delete = move to bin); a persistent bottom bar (Share · Delete ·
-  More) is still pending, P2.
+- A persistent bottom bar: **Share · Delete · More**. It fades with the chrome (Share is
+  offered once the file is decrypted, Delete moves it to the bin, More opens the sheet with
+  rename and move).
 
 ### 5.11 Select Mode
 - Header: back + "Select Items" + "N selected".
 - Grid with checkmarks/selection rings. **Banner hidden, interstitials disabled.**
 - Bottom action bar: Share · Delete · More (Move, Select all, Cancel).
+- **Share** packs the selection into a zip archive and hands it to the system share sheet;
+  the archive is written into the session cache and wiped with the vault.
 - Destructive actions require confirmation.
 
 ### 5.12 Premium

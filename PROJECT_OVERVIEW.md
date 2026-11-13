@@ -168,16 +168,16 @@ so the stored record alone cannot be brute-forced cheaply and never contains the
 |---|---|
 | Disguise gate | Real calculator (expression + result, shrink-to-fit), anonymous dark UI |
 | Setup | 6–12 digit code, confirm step, unrecoverable-code warning, biometric opt-in |
-| PIN unlock | PBKDF2 210k → AES-256-GCM master-key wrap, constant-time verify; native derivation on Android 8+ and iOS |
+| PIN unlock | PBKDF2 210k → AES-256-GCM master-key wrap, constant-time verify; native derivation on Android 8+ and iOS, and the Android module derives it itself on Android 7 and older (the JS fallback took minutes); the gate shows "= Working" with a spinner while the key is derived |
 | Biometric unlock | Face ID / fingerprint; master key in Keychain/Keystore; enabled from Settings (with PIN confirmation)
 | Lockout | 3 free attempts → exponential backoff (15s…15min), survives restart |
-| Auto-lock | Immediately / 30s / 1min / 5min, configurable; rewarded-ad pause sheet (§5.7) grants 1h, free for premium |
+| Auto-lock | Immediately / 30s / 1min / 5min, configurable; rewarded-ad pause sheet (§5.7) grants 1h, free for premium; a bounded grace keeps the vault open while a system picker covers the app |
 | Privacy | Screenshot blocking + app-switcher shield while unlocked; restored for the gate |
-| Import | Photos/videos (photo library), audio, documents & other files; per-file progress; **cancelable** — the files imported before the cancel are kept, the interrupted one leaves nothing behind |
+| Import | Photos/videos (library), **camera**, audio, documents and other files — five sources; per-file progress; **cancelable** — the files imported before the cancel are kept, the interrupted one leaves nothing behind; a toast reports what was added |
 | Organization | Folders, rename, move, search (debounced), storage stats |
-| Viewers | Immersive black stage with tap-to-hide chrome; photos fit-to-screen with pinch-to-zoom, double-tap zoom and drag-to-pan (clamped to the viewport), swipe-pager through the list the grid was showing, video (`expo-video`, no autoplay, native controls + fullscreen, pauses when swiped away), documents open in the system preview sheet from a card; Share via the More sheet (`expo-sharing`) |
-| Deletion | Move to bin, restore, permanent delete, erase-all; 30-day auto-expiry |
-| Gallery | Responsive grid, duration badges, All/Photos/Videos chips, multi-select + bulk actions |
+| Viewers | Immersive black stage with tap-to-hide chrome; photos fit-to-screen with pinch-to-zoom, double-tap zoom and drag-to-pan (clamped to the viewport), swipe-pager through the list the grid was showing, video (`expo-video`, no autoplay, native controls + fullscreen, pauses when swiped away), documents open in the system preview sheet from a card; a persistent bottom bar (Share · Delete · More) and Share via `expo-sharing` |
+| Deletion | Move to bin, restore, permanent delete, erase-all (typed confirmation); 30-day auto-expiry |
+| Gallery | **Justified grid that keeps the real photo ratio** (rows fill the width), duration badges, All/Photos/Videos chips, multi-select + bulk move/delete/**share as a zip archive** |
 | Settings | Change code, biometric switch, auto-lock timer, theme (system/light/dark), app icon, reminders, storage, erase |
 | Premium | $2.99 one-time (`hideme_premium_lifetime`), store-priced, restore purchase + silent launch-time store sync; removes banners/interstitials/rewarded ads and grants the 1h pause without an ad |
 | Unlock success | Animated confirmation after PIN/biometric; Continue → vault (+ interstitial, capped 1/24h); premium CTA |
@@ -186,13 +186,14 @@ so the stored record alone cannot be brute-forced cheaply and never contains the
 | Launcher disguise | Calculator / Notes / Photos / Weather / Music aliases; hide-all mode; dial-code restore |
 | Ads | Banner (hidden in select mode), interstitial after unlock (max 1/24h) and after every 2nd import, rewarded auto-lock pause; all skipped for premium |
 | Audio | Own `audio` item kind, category tile, import row (audio-only picker), music icon in the grid and a player in the viewer (`expo-audio`, playback only — no mic permission) |
-| Quality | Pure-core unit tests (envelope, PBKDF2 known-answer vectors, item kinds + index migration, index search/stats, timings, lockout, auto-lock, bin, ad cap, **the whole import pipeline against an in-memory filesystem**) |
+| Quality | Pure-core unit tests (envelope, PBKDF2 known-answer vectors, item kinds + index migration, index search/stats, timings, lockout, auto-lock, bin, ad cap, **the whole import pipeline against an in-memory filesystem**, the ZIP writer, the justified-grid maths) |
 
 ### Partial
 
 | Area | Gap |
 |---|---|
-| Bulk share | The viewer shares one file via the system sheet; select mode still lacks share/export (no zip/multi-file share) |
+| Bulk export | Select mode exports to a zip archive and shares it; the archive is built in memory, so exports are capped at 200 MB and there is no "save to a folder" (the document picker cannot write to a chosen location) |
+| Purchase verification | The client can check a purchase against a verification endpoint (`EXPO_PUBLIC_PURCHASE_VERIFICATION_URL`); no backend is deployed, so the store stays the only authority |
 | Onboarding | 3 swipeable slides with brand gradient badges, pager dots, skip and a single CTA; setup-secret got the same treatment |
 
 ### Not built
@@ -200,7 +201,6 @@ so the stored record alone cannot be brute-forced cheaply and never contains the
 | Feature | Reference |
 |---|---|
 | App hiding / cloning (Gaia-style) | Competitor feature, out of current product scope |
-| Store-side purchase verification | Entitlement is local; no backend receipt validation yet |
 
 ---
 
@@ -212,17 +212,17 @@ so the stored record alone cannot be brute-forced cheaply and never contains the
    derivations run concurrently when the code changes, and the setup screen keeps the
    first code when the confirmation does not match.
 2. ~~**Faster crypto**~~ — solved by the local `vault-crypto` Expo module: Android 8+
-   uses the platform PBKDF2, iOS uses CommonCrypto; web keeps the JS fallback. All
-   three produce identical bytes (pinned by known-answer tests).
+   uses the platform PBKDF2, Android 7 and older use the module's own PBKDF2-HMAC-SHA256
+   construction, iOS uses CommonCrypto; web keeps the JS fallback. All of them produce
+   identical bytes (pinned by known-answer tests).
 3. ~~**Import/grid lag**~~ — done: grid tiles are memoized, thumbnails get their own
    decryption budget, and import overlaps thumbnail building with the next file.
 4. ~~**"Instant show"**~~ — done: sized placeholder instead of a spinner, no filesystem
    stat during render, no layout jump when the thumbnail or the photo arrives.
-5. **Type/object sizing** — the grid re-measures when the window changes size
-   (`useGridColumns`: multi-window, foldable, tablet split view), and the lists
-   are constrained to `MaxContentWidth` so the tiles fill their cells on wide
-   displays. Still open: the grid is a fixed square crop (`contentFit="cover"`),
-   while DESIGN.md asks for a responsive masonry grid that keeps the real ratio.
+5. ~~**Type/object sizing**~~ — done: the grid re-measures when the window changes size
+   (`useGridColumns`: multi-window, foldable, tablet split view), the lists are
+   constrained to `MaxContentWidth`, and the media gallery uses a **justified grid**
+   that keeps the real photo ratio instead of a square crop.
 6. **Viewer polish** — pinch zoom, double-tap zoom and drag-to-pan ship, and
    the viewer pages through the items the grid was showing. Still to add:
    document scroll.
@@ -233,13 +233,24 @@ so the stored record alone cannot be brute-forced cheaply and never contains the
 1. ~~Audio category + player~~ — done: `audio` item kind (index schema v3, with a
    migration that re-files v2 audio from its mime), category tile, an
    audio-only import row, and a player in the viewer.
-2. Bulk share/export in select mode (single-file share from the viewer now ships via `expo-sharing`).
+2. ~~Bulk share/export in select mode~~ — done: the selection bar shares the
+   selected items as a zip archive (written by `lib/zip.ts`, no dependency), and
+   the single-file share from the viewer ships via `expo-sharing`.
 3. ~~Setup-secret visual pass~~ — done: gradient badge, digit counter, the
    recovery warning the design canon asks for, and a biometric opt-in.
-4. Premium receipt verification against the store (backend optional; the silent launch sync covers reinstall/device changes).
+4. ~~Premium receipt verification~~ — the client checks a purchase against a
+   verification endpoint when one is configured; only an explicit rejection
+   revokes the entitlement. A backend is still needed to make it bite.
 5. ~~**Viewer swipe pager**~~ — done: the grids record the list they were
    showing (`lib/vault-browse.ts`) and the viewer pages through it; a video
    that is swiped away stops playing immediately.
+6. ~~**Erase-all with a typed confirmation**~~ — done: the destructive button
+   only unlocks when the word ERASE is typed.
+7. ~~**Import summary and sources**~~ — done: five source rows (photos &
+   videos, camera, audio, documents, other files) and a toast that reports
+   what was added.
+8. ~~**Loading skeletons**~~ — done: the grids draw skeleton tiles while the
+   index loads instead of a spinner.
 
 ### P2 — hardening & ops
 
@@ -336,7 +347,7 @@ Still open, and why:
 
 | Item | Why it is open |
 |---|---|
-| Masonry / justified grid | DESIGN.md asks for a grid that keeps the real photo ratio. The current one is a uniform square crop; it needs a layout decision plus a visual check on device |
-| Bulk share / export | `expo-sharing` shares a single file and the document picker cannot save to a user-chosen location. A multi-file export needs a zip dependency, which is a deliberate decision rather than an oversight |
-| Store-side receipt validation | The entitlement is local. The silent launch-time store sync covers reinstalls and device changes; server-side validation would need a backend |
+| Export to a chosen folder | The zip goes to the share sheet, but the document picker cannot save to a user-chosen location, so there is no "save as" |
+| Server-side receipt validation | The client can check a purchase against an endpoint, but no backend is deployed to answer it |
 | Filesystem tests for the store | The pure decisions are extracted and covered; the remaining file calls need a fake |
+| Document scroll in the preview | The document opens in the system preview sheet; scrolling a PDF inside the app is a separate feature |

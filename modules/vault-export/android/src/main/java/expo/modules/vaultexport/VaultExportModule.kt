@@ -34,13 +34,13 @@ class VaultExportModule : Module() {
 
     AsyncFunction("saveAs") { sourcePath: String, mimeType: String, suggestedName: String, promise: Promise ->
       if (pendingPromise != null) {
-        promise.reject("E_ALREADY_PENDING", "Another save is already running.")
+        promise.reject("E_ALREADY_PENDING", "Another save is already running.", null)
         return@AsyncFunction
       }
 
       val source = File(stripFileScheme(sourcePath))
       if (!source.exists()) {
-        promise.reject("E_NO_FILE", "The file to save does not exist.")
+        promise.reject("E_NO_FILE", "The file to save does not exist.", null)
         return@AsyncFunction
       }
 
@@ -75,7 +75,7 @@ class VaultExportModule : Module() {
         val uri = data.data!!
         val source = sourcePath?.let { File(stripFileScheme(it)) }
         if (source == null || !source.exists()) {
-          promise.reject("E_NO_FILE", "The file to save does not exist.")
+          promise.reject("E_NO_FILE", "The file to save does not exist.", null)
           return@OnActivityResult
         }
 
@@ -90,7 +90,7 @@ class VaultExportModule : Module() {
 
             promise.resolve(uri.toString())
           } catch (error: Exception) {
-            promise.reject("E_WRITE", error.message ?: "The file could not be saved.")
+            promise.reject("E_WRITE", error.message ?: "The file could not be saved.", error)
           }
         }
       }

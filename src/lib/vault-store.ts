@@ -32,6 +32,7 @@ import {
 import { expoFileSystem } from './vault-fs-expo';
 import { readIndexFile, writeIndexFile, type IndexFileLayout } from './vault-index-file';
 import { createPlaintextGuard } from './vault-plaintext-guard';
+import { deleteItemFiles, type ItemFileLayout } from './vault-store-files';
 import type { ImportCancellation } from './import-cancellation';
 import { runImport, type ImportOutcome, type ImportPaths, type ImportProgress, type PickedAsset } from './vault-import';
 import { onLock } from './vault-session';
@@ -449,14 +450,20 @@ export function binItems(index: VaultIndex): VaultItem[] {
 }
 
 function deleteItemFile(itemId: string): void {
-  const file = itemFile(itemId);
-  if (file.exists) file.delete();
-  const thumb = thumbCipherFile(itemId);
-  if (thumb.exists) thumb.delete();
-  const thumbPlain = thumbPlainFile(itemId);
-  if (thumbPlain.exists) thumbPlain.delete();
+  // The blob and both thumbnails: a leftover thumbnail is a leftover copy of
+  // the user's photo.
+  deleteItemFiles(expoFileSystem, itemFileLayout(), itemId);
   inflightThumbs.delete(itemId);
   clearInflight(itemId);
+}
+
+/** The paths of the files an item owns. */
+function itemFileLayout(): ItemFileLayout {
+  return {
+    blob: (itemId) => itemFile(itemId).uri,
+    thumb: (itemId) => thumbCipherFile(itemId).uri,
+    plainThumb: (itemId) => thumbPlainFile(itemId).uri,
+  };
 }
 
 export async function renameItem(masterKey: Uint8Array, itemId: string, name: string): Promise<void> {

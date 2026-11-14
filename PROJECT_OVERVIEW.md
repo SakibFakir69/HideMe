@@ -304,12 +304,21 @@ Ads and biometrics require a **development build** — Expo Go will not run the 
 
 ---
 
-## 9. Repository state (as of 2026-11-12)
+## 9. Repository state (as of 2026-11-15)
 
 The tree is clean. Recent commits, newest first:
 
 | Commit | What |
 |---|---|
+| `a851fd0` | Pin `expo-modules-autolinking` to the version the native template needs |
+| `1e6ae54` | ProGuard keep rules from a config plugin, so the minified release build starts |
+| `8e5adf2` | Text documents are previewed in the app |
+| `a2c23ac` | The privacy policy and the store listing copy |
+| `d017e63` | The export module's error codes need the three-argument reject |
+| `2ca9283` | Tests for the encrypted index file against an in-memory filesystem |
+| `4a3045f` | Save an export to a place the user owns (new `vault-export` module) |
+| `5880ef7` | Keep the ads SDK out of the web and server bundles |
+| `8e5adf2` | Paging driven by the photo's swipe; a drag no longer toggles the chrome |
 | `6e8b4bf` | The pager uses the gesture-handler list, so the photo's swipe reaches it (verified on the emulator: 1/9 → 2/9 → back, chrome untouched) |
 | `c2a9f0b` | Paging driven by the photo's swipe; a drag no longer toggles the chrome |
 | `7b30cf9` | Picker grace armed before the permission prompt and dropped when no picker opens |
@@ -335,11 +344,18 @@ The tree is clean. Recent commits, newest first:
 | `205d0e2` | Redesign wave |
 
 Verified after every wave: `tsc --noEmit`, `expo lint`, the unit tests
-(69 passing), `expo export --platform android`, `expo prebuild --platform
-android` (manifest and backup rules checked) and
-`gradlew :vault-crypto:compileDebugKotlin` (BUILD SUCCESSFUL).
+(119 passing), `expo export --platform web`, `expo prebuild --platform
+android` (manifest, backup rules and the ProGuard rules checked) and the
+release APK built and started on a device.
 
-An x86_64 emulator is now attached, so viewer work can be checked on device:
+The release build earned its keep: it is the only build that is minified and
+the only one that bundles the JS, and it found three bugs the debug build
+never could — the ads SDK breaking the server bundle, R8 stripping the Room
+database the ads SDK's WorkManager uses (the app died before the first
+screen), and the native autolinking CLI not knowing the command the Gradle
+plugin asks for.
+
+An x86_64 emulator is attached, so viewer work can be checked on device:
 `adb shell input swipe/tap` plus `uiautomator dump` read the UI tree even
 though the vault window is `FLAG_SECURE` (screenshots stay black).
 
@@ -348,5 +364,5 @@ Still open, and why:
 | Item | Why it is open |
 |---|---|
 | Server-side receipt validation | The client can check a purchase against an endpoint, but no backend is deployed to answer it |
-| Filesystem tests for the store | The import pipeline and the encrypted index are covered against an in-memory filesystem; the item-level file calls (thumbnails, cached plaintext) still use the real one |
-| Document scroll in the preview | The document opens in the system preview sheet; scrolling a PDF inside the app is a separate feature |
+| Filesystem tests for the store | The import pipeline, the encrypted index and the item purge are covered against an in-memory filesystem; the cached plaintext still uses the real one |
+| Document scroll in the preview | Text documents are previewed in the app now; a PDF renderer is a separate feature |

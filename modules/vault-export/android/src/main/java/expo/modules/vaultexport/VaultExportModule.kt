@@ -83,10 +83,10 @@ class VaultExportModule : Module() {
         CoroutineScope(Dispatchers.IO).launch {
           try {
             val resolver = appContext.reactContext?.contentResolver
-              ?: throw CodedException("E_NO_CONTEXT", "No context to write the file.")
+              ?: throw CodedException("E_NO_CONTEXT", "No context to write the file.", null)
             resolver.openOutputStream(uri)?.use { output ->
               FileInputStream(source).use { input -> input.copyTo(output) }
-            } ?: throw CodedException("E_WRITE", "The chosen location could not be opened.")
+            } ?: throw CodedException("E_WRITE", "The chosen location could not be opened.", null)
 
             promise.resolve(uri.toString())
           } catch (error: Exception) {

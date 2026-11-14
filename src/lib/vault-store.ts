@@ -32,6 +32,7 @@ import {
   type FileCryptoProgress,
 } from './crypto/file-crypto';
 import { expoFileSystem } from './vault-fs-expo';
+import { createPlaintextGuard } from './vault-plaintext-guard';
 import type { ImportCancellation } from './import-cancellation';
 import { runImport, type ImportOutcome, type ImportPaths, type ImportProgress, type PickedAsset } from './vault-import';
 import { onLock } from './vault-session';
@@ -589,20 +590,17 @@ function clearInflight(itemId: string): void {
   inflightDecrypts.delete(itemId);
 }
 
-let plaintextHolders = 0;
-let plaintextPurgeDeferred = false;
+const plaintextGuard = createPlaintextGuard();
 
 export function purgeTempPlaintext(): void {
   // A share sheet may still be reading the file from another app: the lock
   // still happens, but deletion waits until the share returns.
-  if (plaintextHolders > 0) {
-    plaintextPurgeDeferred = true;
-    return;
-  }
-  inflightDecrypts.clear();
-  inflightThumbs.clear();
-  const tmp = tmpDir();
-  if (tmp.exists) tmp.delete();
+  plaintextGuard.requestPurge(() => {
+    inflightDecrypts.clear();
+    inflightThumbs.clear();
+    const tmp = tmpDir();
+    if (tmp.exists) tmp.delete();
+  });
 }
 
 /**
@@ -610,17 +608,7 @@ export function purgeTempPlaintext(): void {
  * Releasing replays a purge that a lock requested in the meantime.
  */
 export function holdPlaintextPurge(): () => void {
-  plaintextHolders += 1;
-  let released = false;
-  return () => {
-    if (released) return;
-    released = true;
-    plaintextHolders = Math.max(0, plaintextHolders - 1);
-    if (plaintextHolders === 0 && plaintextPurgeDeferred) {
-      plaintextPurgeDeferred = false;
-      purgeTempPlaintext();
-    }
-  };
+  return plaintextGuard.hold();
 }
 
 /* ------------------------------------------------------------------ */

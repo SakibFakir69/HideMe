@@ -2,8 +2,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import { Alert, FlatList, StyleSheet, View } from 'react-native';
+import type { File } from 'expo-file-system';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { ActionSheetModal, type SheetAction } from '@/components/vault/action-sheet-modal';
 import { confirmDestructive } from '@/components/vault/confirm';
 import { PhotoRow, usePhotoRows } from '@/components/vault/photo-grid';
 import { SelectionBar } from '@/components/vault/selection-bar';
@@ -17,8 +19,10 @@ import { Fonts, MaxContentWidth, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { GRID_GAP } from '@/hooks/use-grid-columns';
 import { useVaultIndex } from '@/hooks/use-vault-index';
+import { canSaveAs, saveExportAs } from '@/lib/export-save';
 import { exportItemsToZip } from '@/lib/export-zip';
 import { sharePreparedFile } from '@/lib/share';
+import { showToast } from '@/lib/toast';
 import { setBrowseList } from '@/lib/vault-browse';
 import { getMasterKey } from '@/lib/vault-session';
 import { moveItemsToBin, restoreItems, searchItems, type VaultItem } from '@/lib/vault-store';
@@ -33,6 +37,8 @@ export default function GalleryScreen() {
   const [filter, setFilter] = useState<MediaFilter>('all');
   const [selected, setSelected] = useState<Set<string> | null>(null);
   const [sharing, setSharing] = useState(false);
+  const [exported, setExported] = useState<{ file: File; name: string; count: number } | null>(null);
+  const [exportSheetOpen, setExportSheetOpen] = useState(false);
   const selectMode = selected !== null;
 
   const items = useMemo(() => {
@@ -121,21 +127,60 @@ export default function GalleryScreen() {
         );
         return;
       }
-      const shared = await sharePreparedFile(result.file, {
-        mime: 'application/zip',
-        title: `Share ${result.count} file${result.count === 1 ? '' : 's'}`,
-      });
-      if (shared === 'unavailable') {
-        Alert.alert('Sharing isn’t available', 'This build can’t open the system share sheet.');
-      } else if (shared === 'failed') {
-        Alert.alert('Could not share', 'The archive could not be handed to another app.');
-      }
+      // The archive is ready: let the user send it somewhere or write it to a
+      // place they own.
+      setExported({ file: result.file, name: result.name, count: result.count });
+      setExportSheetOpen(true);
     } catch (err) {
-      Alert.alert('Could not share', err instanceof Error ? err.message : String(err));
+      Alert.alert('Could not export', err instanceof Error ? err.message : String(err));
     } finally {
       setSharing(false);
     }
   };
+
+  const onExportShare = useCallback(async () => {
+    if (!exported) return;
+    const shared = await sharePreparedFile(exported.file, {
+      mime: 'application/zip',
+      title: `Share ${exported.count} file${exported.count === 1 ? '' : 's'}`,
+    });
+    if (shared === 'unavailable') {
+      Alert.alert('Sharing isn’t available', 'This build can’t open the system share sheet.');
+    } else if (shared === 'failed') {
+      Alert.alert('Could not share', 'The archive could not be handed to another app.');
+    }
+  }, [exported]);
+
+  const onExportSave = useCallback(async () => {
+    if (!exported) return;
+    const result = await saveExportAs(exported.file, exported.name, 'application/zip');
+    if (result === 'unavailable') {
+      Alert.alert('Saving isn’t available', 'This build can’t write to a chosen location.');
+    } else if (result === 'failed') {
+      Alert.alert('Could not save', 'The archive could not be written to that location.');
+    } else if (result === 'saved') {
+      showToast(`Saved ${exported.name}`, 'success');
+    }
+  }, [exported]);
+
+  const exportActions: SheetAction[] = useMemo(() => {
+    if (!exported) return [];
+    const actions: SheetAction[] = [
+      {
+        label: 'Share archive',
+        icon: <Ionicons name="share-outline" size={18} color={theme.text} />,
+        onSelect: () => void onExportShare(),
+      },
+    ];
+    if (canSaveAs()) {
+      actions.push({
+        label: 'Save to a file…',
+        icon: <Ionicons name="save-outline" size={18} color={theme.text} />,
+        onSelect: () => void onExportSave(),
+      });
+    }
+    return actions;
+  }, [exported, onExportSave, onExportShare, theme.text]);
 
   return (
     <ThemedView style={styles.container}>
@@ -218,6 +263,14 @@ export default function GalleryScreen() {
         )}
         {!selectMode && <Fab label="Import files" onPress={() => router.push('/vault/import')} />}
       </SafeAreaView>
+
+      <ActionSheetModal
+        visible={exportSheetOpen}
+        title={exported ? `${exported.count} file${exported.count === 1 ? '' : 's'} exported` : undefined}
+        subtitle={exported?.name}
+        actions={exportActions}
+        onClose={() => setExportSheetOpen(false)}
+      />
     </ThemedView>
   );
 }

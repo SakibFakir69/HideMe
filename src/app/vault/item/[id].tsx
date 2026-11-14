@@ -10,6 +10,7 @@ import {
   Alert,
   Animated,
   Pressable,
+  ScrollView,
   StatusBar,
   StyleSheet,
   Text,
@@ -61,6 +62,17 @@ function describeItem(item: VaultItem): string {
   if (item.width && item.height) parts.push(`${item.width}×${item.height}`);
   parts.push(formatDate(item.createdAt));
   return parts.join('   ·   ');
+}
+
+/** Text-ish documents are previewed inside the app. */
+const TEXT_MIME_RE = /^(text\/|application\/(json|xml|javascript|x-sh|x-www-form-urlencoded))/i;
+const TEXT_EXT_RE = /\.(txt|md|markdown|json|csv|log|yml|yaml|ini|conf|env|ts|tsx|js|jsx|html|css|xml|sh)$/i;
+/** How much of a text document is previewed. */
+const MAX_PREVIEW_CHARS = 20_000;
+
+function isTextDocument(item: VaultItem): boolean {
+  if (TEXT_MIME_RE.test(item.mime)) return true;
+  return TEXT_EXT_RE.test(item.name) || TEXT_EXT_RE.test(item.ext);
 }
 
 function documentIcon(mime: string): keyof typeof Ionicons.glyphMap {
@@ -692,6 +704,30 @@ function DocumentView({
   onOpenError: (message: string) => void;
 }) {
   const [opening, setOpening] = useState(false);
+  const [preview, setPreview] = useState<string | null>(null);
+
+  // Text documents are previewed in the app: the file is already decrypted in
+  // the cache, so scrolling it here needs no other app and leaks nothing.
+  useEffect(() => {
+    if (!isTextDocument(item)) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const text = await file.text();
+        if (cancelled) return;
+        setPreview(
+          text.length > MAX_PREVIEW_CHARS
+            ? `${text.slice(0, MAX_PREVIEW_CHARS)}\n…\n(truncated)`
+            : text,
+        );
+      } catch {
+        // A file that cannot be read as text keeps the card-only view.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [file, item]);
 
   const open = async () => {
     if (opening) return;
@@ -711,7 +747,7 @@ function DocumentView({
   };
 
   return (
-    <View style={styles.centerFill}>
+    <View style={styles.docStage}>
       <View style={styles.docCard}>
         <LinearGradient
           colors={['#6366F1', '#8B5CF6']}
@@ -745,9 +781,20 @@ function DocumentView({
           <Text style={styles.primaryText}>{opening ? 'Opening…' : 'Open document'}</Text>
         </Pressable>
         <Text style={styles.docHint}>
-          Opens in another app · the file stays encrypted inside HideMe
+          {preview !== null
+            ? 'Preview stays inside HideMe · open it in another app to edit it'
+            : 'Opens in another app · the file stays encrypted inside HideMe'}
         </Text>
       </View>
+
+      {preview !== null && (
+        <ScrollView
+          style={styles.docPreview}
+          contentContainerStyle={styles.docPreviewContent}
+          showsVerticalScrollIndicator>
+          <Text style={styles.docPreviewText}>{preview}</Text>
+        </ScrollView>
+      )}
     </View>
   );
 }
@@ -1116,6 +1163,27 @@ const styles = StyleSheet.create({
     lineHeight: 16,
     textAlign: 'center',
     marginTop: Spacing.three,
+  },
+  docStage: {
+    flex: 1,
+    padding: Spacing.four,
+    gap: Spacing.three,
+  },
+  docPreview: {
+    flex: 1,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.12)',
+  },
+  docPreviewContent: {
+    padding: Spacing.three,
+  },
+  docPreviewText: {
+    color: 'rgba(255,255,255,0.86)',
+    fontFamily: Fonts.mono,
+    fontSize: 12,
+    lineHeight: 18,
   },
 
   pressed: {

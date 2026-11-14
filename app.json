@@ -69,6 +69,7 @@
       "expo-iap",
       "expo-notifications",
       "./plugins/with-launcher-disguise",
+      "./plugins/with-release-rules",
       "expo-sharing",
       [
         "expo-audio",

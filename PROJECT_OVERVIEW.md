@@ -186,13 +186,13 @@ so the stored record alone cannot be brute-forced cheaply and never contains the
 | Launcher disguise | Calculator / Notes / Photos / Weather / Music aliases; hide-all mode; dial-code restore |
 | Ads | Banner (hidden in select mode), interstitial after unlock (max 1/24h) and after every 2nd import, rewarded auto-lock pause; all skipped for premium |
 | Audio | Own `audio` item kind, category tile, import row (audio-only picker), music icon in the grid and a player in the viewer (`expo-audio`, playback only — no mic permission) |
-| Quality | Pure-core unit tests (envelope, PBKDF2 known-answer vectors, item kinds + index migration, index search/stats, timings, lockout, auto-lock, bin, ad cap, **the whole import pipeline against an in-memory filesystem**, the ZIP writer, the justified-grid maths) |
+| Quality | Pure-core unit tests (envelope, PBKDF2 known-answer vectors, item kinds + index migration, index search/stats, timings, lockout, auto-lock, bin, ad cap, **the whole import pipeline against an in-memory filesystem**, the encrypted index file, the ZIP writer, the justified-grid maths, the plaintext-purge guard) |
 
 ### Partial
 
 | Area | Gap |
 |---|---|
-| Bulk export | Select mode exports to a zip archive and shares it; the archive is built in memory, so exports are capped at 200 MB and there is no "save to a folder" (the document picker cannot write to a chosen location) |
+| Bulk export | Select mode exports to a zip archive and shares it; the archive can also be written to a place the user owns (Android's file picker through the local `vault-export` module) |
 | Purchase verification | The client can check a purchase against a verification endpoint (`EXPO_PUBLIC_PURCHASE_VERIFICATION_URL`); no backend is deployed, so the store stays the only authority |
 | Onboarding | 3 swipeable slides with brand gradient badges, pager dots, skip and a single CTA; setup-secret got the same treatment |
 
@@ -347,7 +347,6 @@ Still open, and why:
 
 | Item | Why it is open |
 |---|---|
-| Export to a chosen folder | The zip goes to the share sheet, but the document picker cannot save to a user-chosen location, so there is no "save as" |
 | Server-side receipt validation | The client can check a purchase against an endpoint, but no backend is deployed to answer it |
-| Filesystem tests for the store | The pure decisions are extracted and covered; the remaining file calls need a fake |
+| Filesystem tests for the store | The import pipeline and the encrypted index are covered against an in-memory filesystem; the item-level file calls (thumbnails, cached plaintext) still use the real one |
 | Document scroll in the preview | The document opens in the system preview sheet; scrolling a PDF inside the app is a separate feature |

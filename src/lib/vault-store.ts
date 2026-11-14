@@ -20,8 +20,6 @@ import {
 import {
   decryptBytes,
   encryptBytes,
-  fromUtf8,
-  utf8,
   type Random,
 } from './crypto/envelope';
 import {
@@ -32,6 +30,7 @@ import {
   type FileCryptoProgress,
 } from './crypto/file-crypto';
 import { expoFileSystem } from './vault-fs-expo';
+import { readIndexFile, writeIndexFile, type IndexFileLayout } from './vault-index-file';
 import { createPlaintextGuard } from './vault-plaintext-guard';
 import type { ImportCancellation } from './import-cancellation';
 import { runImport, type ImportOutcome, type ImportPaths, type ImportProgress, type PickedAsset } from './vault-import';
@@ -98,6 +97,14 @@ function filesDir(): Directory {
 
 function indexFile(): File {
   return new File(rootDir(), 'index.hmd');
+}
+
+/** Where the encrypted index lives, for the file layer. */
+function indexLayout(): IndexFileLayout {
+  return {
+    index: indexFile().uri,
+    temp: new File(rootDir(), 'index.hmd.tmp').uri,
+  };
 }
 
 function tmpDir(): Directory {
@@ -199,16 +206,14 @@ export async function loadIndex(masterKey: Uint8Array): Promise<VaultIndex> {
   ensureDir(filesDir());
   // An import that was killed mid-file left a partial blob behind.
   purgePartialBlobs();
-  const f = indexFile();
-  if (!f.exists) {
+  const json = await readIndexFile(expoFileSystem, indexLayout(), masterKey);
+  if (json === null) {
     cachedIndex = emptyIndex();
     return cachedIndex;
   }
-  const env = await f.bytes();
-  const opened = decryptBytes(env, masterKey);
   let parsed: VaultIndex;
   try {
-    parsed = JSON.parse(fromUtf8(opened.plaintext)) as VaultIndex;
+    parsed = JSON.parse(json) as VaultIndex;
   } catch {
     throw new Error('Vault index is corrupted.');
   }
@@ -231,21 +236,13 @@ export async function loadIndex(masterKey: Uint8Array): Promise<VaultIndex> {
 
 async function saveIndex(masterKey: Uint8Array): Promise<void> {
   if (!cachedIndex) throw new Error('Vault index is not loaded.');
-  const bytes = encryptBytes(utf8(JSON.stringify(cachedIndex)), masterKey, 'vault-index', rand);
-  // The index is written to a temporary file and moved into place: a failed
-  // write leaves the previous index intact instead of a half-written one.
-  const target = indexFile();
-  const temp = new File(rootDir(), 'index.hmd.tmp');
-  if (temp.exists) temp.delete();
-  temp.create();
-  try {
-    await temp.write(bytes);
-    if (target.exists) target.delete();
-    await temp.move(target);
-  } catch (error) {
-    if (temp.exists) temp.delete();
-    throw error;
-  }
+  await writeIndexFile(
+    expoFileSystem,
+    indexLayout(),
+    JSON.stringify(cachedIndex),
+    masterKey,
+    rand,
+  );
   notifyIndexListeners();
 }
 

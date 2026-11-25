@@ -229,7 +229,11 @@ async function pickAssets(kind: ImportKind): Promise<PickedAsset[] | null> {
   // grace before the first of them, not just before the picker.
   beginPickerGrace();
   try {
-    return await openPicker(kind);
+    const assets = await openPicker(kind);
+    // A cancelled picker may not produce a background/active round-trip on
+    // every platform, so close the grace here rather than leaving it armed.
+    if (assets === null) clearPickerGrace();
+    return assets;
   } catch (error) {
     // No picker was shown, so the grace has nothing to cover.
     clearPickerGrace();

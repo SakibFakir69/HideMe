@@ -35,13 +35,17 @@ import { createPlaintextGuard } from './vault-plaintext-guard';
 import { deleteItemFiles, type ItemFileLayout } from './vault-store-files';
 import type { ImportCancellation } from './import-cancellation';
 import { runImport, type ImportOutcome, type ImportPaths, type ImportProgress, type PickedAsset } from './vault-import';
-import { onLock } from './vault-session';
+import { onLock, setScopeHook } from './vault-session';
 
 /**
  * Vault storage: app-private sandbox.
  *   <documents>/vault/index.hmd     encrypted index envelope
  *   <documents>/vault/files/<id>.hmd   encrypted content blobs
  *   <cache>/vault-tmp/...           decrypted plaintext (purged on lock)
+ *
+ * The DECOY vault is a completely separate encrypted space — same layout
+ * under <documents>/vault-decoy/ — so a decoy session never touches (or even
+ * discovers the existence of) the real index or blobs.
  */
 
 export type { ItemKind, VaultFolder, VaultIndex, VaultItem };
@@ -50,7 +54,21 @@ export type { ImportOutcome, ImportProgress, PickedAsset } from './vault-import'
 
 const rand: Random = (length: number) => Crypto.getRandomBytes(length);
 
-let cachedIndex: VaultIndex | null = null;
+/** 'main' = the real vault; 'decoy' = the decoy PIN's fake vault. */
+export type VaultScope = 'main' | 'decoy';
+
+let activeScope: VaultScope = 'main';
+
+/** Called by vault-session on every unlock/lock so paths follow the session. */
+export function setVaultScope(scope: VaultScope): void {
+  activeScope = scope;
+}
+
+setScopeHook((decoy) => {
+  setVaultScope(decoy ? 'decoy' : 'main');
+});
+
+const cachedByScope = new Map<VaultScope, VaultIndex>();
 const inflightDecrypts = new Map<string, Promise<File>>();
 const inflightThumbs = new Map<string, Promise<File>>();
 
@@ -89,7 +107,7 @@ function emptyIndex(): VaultIndex {
 }
 
 function rootDir(): Directory {
-  return new Directory(Paths.document, 'vault');
+  return new Directory(Paths.document, activeScope === 'decoy' ? 'vault-decoy' : 'vault');
 }
 
 function filesDir(): Directory {
@@ -202,15 +220,17 @@ function purgePartialBlobs(): void {
 }
 
 export async function loadIndex(masterKey: Uint8Array): Promise<VaultIndex> {
-  if (cachedIndex) return cachedIndex;
+  const cached = cachedByScope.get(activeScope);
+  if (cached) return cached;
   ensureDir(rootDir());
   ensureDir(filesDir());
   // An import that was killed mid-file left a partial blob behind.
   purgePartialBlobs();
   const json = await readIndexFile(expoFileSystem, indexLayout(), masterKey);
   if (json === null) {
-    cachedIndex = emptyIndex();
-    return cachedIndex;
+    const empty = emptyIndex();
+    cachedByScope.set(activeScope, empty);
+    return empty;
   }
   let parsed: VaultIndex;
   try {
@@ -225,22 +245,24 @@ export async function loadIndex(masterKey: Uint8Array): Promise<VaultIndex> {
   ) {
     throw new Error('Vault index is corrupted.');
   }
-  cachedIndex = {
+  const index: VaultIndex = {
     v: INDEX_VERSION,
     folders: parsed.folders,
     items: parsed.items.map(normalizeItem),
   };
+  cachedByScope.set(activeScope, index);
   // The index is read once per session — this is the "vault ready" moment.
   mark('index.loaded');
-  return cachedIndex;
+  return index;
 }
 
 async function saveIndex(masterKey: Uint8Array): Promise<void> {
-  if (!cachedIndex) throw new Error('Vault index is not loaded.');
+  const cached = cachedByScope.get(activeScope);
+  if (!cached) throw new Error('Vault index is not loaded.');
   await writeIndexFile(
     expoFileSystem,
     indexLayout(),
-    JSON.stringify(cachedIndex),
+    JSON.stringify(cached),
     masterKey,
     rand,
   );
@@ -264,7 +286,7 @@ function notifyIndexListeners(): void {
 }
 
 export function peekIndex(): VaultIndex | null {
-  return cachedIndex;
+  return cachedByScope.get(activeScope) ?? null;
 }
 
 /* ------------------------------------------------------------------ */
@@ -533,9 +555,137 @@ export async function eraseAllContents(masterKey: Uint8Array): Promise<void> {
   if (files.exists) files.delete();
   const index = indexFile();
   if (index.exists) index.delete();
-  cachedIndex = emptyIndex();
+  removeRestoreScratch();
+  cachedByScope.set(activeScope, emptyIndex());
   inflightDecrypts.clear();
   await saveIndex(masterKey);
+}
+
+/* ------------------------------------------------------------------ */
+/* restore scratch space                                               */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Restore writes into a staging directory first, so a failed attempt never
+ * costs the vault that is already on disk. Both scratch directories live
+ * INSIDE the scope's root: `wipeScope` and `eraseAllContents` delete the root
+ * wholesale and therefore clean them up too.
+ */
+function stagingDir(): Directory {
+  return new Directory(rootDir(), 'files-restore');
+}
+
+function previousFilesDir(): Directory {
+  return new Directory(rootDir(), 'files-prev');
+}
+
+function removeRestoreScratch(): void {
+  for (const dir of [stagingDir(), previousFilesDir()]) {
+    try {
+      if (dir.exists) dir.delete();
+    } catch {
+      // best effort — a leftover scratch directory holds no live data
+    }
+  }
+}
+
+/** Removes a scope's entire encrypted space (used when a decoy is removed). */
+export function wipeScope(scope: VaultScope): void {
+  const previous = activeScope;
+  activeScope = scope;
+  try {
+    const root = rootDir();
+    if (root.exists) root.delete();
+  } finally {
+    activeScope = previous;
+  }
+  cachedByScope.delete(scope);
+}
+
+/**
+ * Replaces the current vault's contents with a backup's contents. The blobs
+ * in a backup are envelopes under the backup's master key, so restoring is a
+ * verbatim copy: stage the blobs, swap them in, then write the backup's index.
+ *
+ * The staging step matters: `copyBlob` reads a stream the user handed us, and
+ * a truncated file or a full disk fails halfway through. Deleting the current
+ * blobs first would turn a bad backup into a permanently empty vault, so
+ * nothing on disk is touched until every blob has been read successfully.
+ *
+ * Callers must already hold the lock or be about to lock (the backup's
+ * record replaces the secret record in SecureStore).
+ */
+export async function restoreVaultContents(
+  masterKey: Uint8Array,
+  index: VaultIndex,
+  copyBlob: (itemId: string, dest: File) => Promise<void>,
+): Promise<void> {
+  const root = rootDir();
+  ensureDir(root);
+
+  // 1. Read every blob into a staging directory. The live vault is untouched.
+  const staging = stagingDir();
+  if (staging.exists) staging.delete();
+  staging.create();
+  try {
+    for (const item of index.items) {
+      const dest = new File(staging, `${item.id}.hmd`);
+      if (dest.exists) dest.delete();
+      dest.create();
+      await copyBlob(item.id, dest);
+    }
+  } catch (error) {
+    try {
+      if (staging.exists) staging.delete();
+    } catch {
+      // best effort — the current vault was never touched
+    }
+    throw error;
+  }
+
+  // 2. Swap: park the old blobs under a scratch name rather than deleting
+  //    them, so the swap is reversible until the new index is on disk.
+  const previous = previousFilesDir();
+  if (previous.exists) previous.delete();
+  const hadFiles = filesDir().exists;
+  if (hadFiles) await filesDir().move(previous);
+  try {
+    // `staging` and `filesDir()` instances update their uri after a move, so
+    // re-resolve the destination instead of reusing a stale handle.
+    await staging.move(filesDir());
+    inflightDecrypts.clear();
+    inflightThumbs.clear();
+    await writeIndexFile(
+      expoFileSystem,
+      indexLayout(),
+      JSON.stringify({ ...index, v: INDEX_VERSION }),
+      masterKey,
+      rand,
+    );
+  } catch (error) {
+    // 3. Roll back: drop the half-written blobs and put the old ones back.
+    try {
+      const broken = filesDir();
+      if (broken.exists) broken.delete();
+      if (hadFiles && previous.exists) await previous.move(filesDir());
+    } catch {
+      // the original failure is the one worth reporting
+    }
+    throw error;
+  }
+
+  // Success — the parked blobs are no longer needed.
+  try {
+    if (previous.exists) previous.delete();
+  } catch {
+    // best effort; `eraseAllContents`/`wipeScope` clean it up otherwise
+  }
+  cachedByScope.set(activeScope, {
+    v: INDEX_VERSION,
+    folders: index.folders,
+    items: index.items.map(normalizeItem),
+  });
+  notifyIndexListeners();
 }
 
 /* ------------------------------------------------------------------ */
@@ -728,5 +878,5 @@ export function errorMessage(error: unknown): string {
 // Safety net: plaintext cache and index cache never outlive a lock.
 onLock(() => {
   purgeTempPlaintext();
-  cachedIndex = null;
+  cachedByScope.clear();
 });

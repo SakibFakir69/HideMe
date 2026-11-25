@@ -1,7 +1,7 @@
 import { Pressable, StyleSheet, Text } from 'react-native';
 
 import { Fonts, Radius, Spacing } from '@/constants/theme';
-import { useTheme } from '@/hooks/use-theme';
+import { useVaultPalette } from '@/hooks/use-vault-palette';
 
 interface ChipProps {
   label: string;
@@ -11,7 +11,7 @@ interface ChipProps {
 
 /** Filter chip — gallery "All / Photos / Videos". */
 export function Chip({ label, active = false, onPress }: ChipProps) {
-  const theme = useTheme();
+  const palette = useVaultPalette();
   return (
     <Pressable
       onPress={onPress}
@@ -20,12 +20,12 @@ export function Chip({ label, active = false, onPress }: ChipProps) {
       style={({ pressed }) => [
         styles.chip,
         {
-          backgroundColor: active ? theme.tint : theme.backgroundElement,
-          borderColor: active ? theme.tint : theme.border,
+          backgroundColor: active ? palette.accent : palette.surface,
+          borderColor: active ? palette.accent : palette.border,
         },
         pressed && styles.pressed,
       ]}>
-      <Text style={[styles.label, { color: active ? '#FFFFFF' : theme.textSecondary }]} numberOfLines={1}>
+      <Text style={[styles.label, { color: active ? '#FFFFFF' : palette.textSecondary }]} numberOfLines={1}>
         {label}
       </Text>
     </Pressable>

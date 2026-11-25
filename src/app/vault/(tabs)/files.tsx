@@ -1,23 +1,24 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
-import { FlatList, Pressable, StyleSheet, View } from 'react-native';
+import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { formatBytes } from '@/components/vault/format';
+import { AdBanner } from '@/components/vault/ad-banner';
 import { SearchBar } from '@/components/vault/search-bar';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
+import { VaultHeader } from '@/components/vault/vault-header';
 import { Fab } from '@/components/ui/fab';
+import { VAULT_ACCENTS } from '@/constants/vault-theme';
 import { Fonts, MaxContentWidth, Radius, Spacing } from '@/constants/theme';
 import { useDebouncedValue } from '@/hooks/use-debounced-value';
-import { useTheme } from '@/hooks/use-theme';
 import { useVaultIndex } from '@/hooks/use-vault-index';
+import { useVaultPalette } from '@/hooks/use-vault-palette';
 import { setBrowseList } from '@/lib/vault-browse';
 import { searchItems, type VaultItem } from '@/lib/vault-store';
 
 export default function FilesScreen() {
-  const theme = useTheme();
+  const palette = useVaultPalette();
   const { index, loading } = useVaultIndex();
   const [query, setQuery] = useState('');
   const effectiveQuery = useDebouncedValue(query, 250);
@@ -46,7 +47,7 @@ export default function FilesScreen() {
   );
 
   return (
-    <ThemedView style={styles.container}>
+    <View style={[styles.container, { backgroundColor: palette.background }]}>
       <SafeAreaView style={styles.safeArea} edges={['top']}>
         <FlatList
           data={documents}
@@ -56,24 +57,27 @@ export default function FilesScreen() {
           contentContainerStyle={styles.listContent}
           ListHeaderComponent={
             <View style={styles.headerBlock}>
-              <ThemedText type="subtitle" style={styles.title}>
-                Files
-              </ThemedText>
+              <VaultHeader
+                icon="document-text"
+                gradient={VAULT_ACCENTS.emerald.gradient}
+                title="Files"
+                subtitle="Your private documents"
+              />
               <SearchBar value={query} onChange={setQuery} placeholder="Search files…" />
-              <ThemedText type="code" themeColor="textSecondary">
+              <Text style={[styles.meta, { color: palette.textSecondary }]}>
                 {`${documents.length} file${documents.length === 1 ? '' : 's'} · ${formatBytes(totalBytes)}`}
-              </ThemedText>
+              </Text>
             </View>
           }
           ListEmptyComponent={
             loading ? undefined : (
               <View style={styles.emptyBox}>
-                <Ionicons name="document-outline" size={30} color={theme.textSecondary} />
-                <ThemedText type="small" themeColor="textSecondary" style={styles.emptyText}>
+                <Ionicons name="document-outline" size={30} color={palette.textSecondary} />
+                <Text style={[styles.emptyText, { color: palette.textSecondary }]}>
                   {effectiveQuery
                     ? 'Nothing matches your search.'
                     : 'No files yet.\nImport PDFs, text files, archives, audio and more.'}
-                </ThemedText>
+                </Text>
               </View>
             )
           }
@@ -84,32 +88,40 @@ export default function FilesScreen() {
               accessibilityLabel={item.name}
               style={({ pressed }) => [
                 styles.row,
-                { backgroundColor: theme.backgroundElement },
+                { backgroundColor: palette.surface, borderColor: palette.border },
                 pressed && styles.pressed,
               ]}>
-              <View style={styles.iconCircle}>
+              <View
+                style={[
+                  styles.iconCircle,
+                  {
+                    backgroundColor:
+                      item.kind === 'audio' ? VAULT_ACCENTS.violet.wash : VAULT_ACCENTS.emerald.wash,
+                  },
+                ]}>
                 <Ionicons
                   name={item.kind === 'audio' ? 'musical-notes' : 'document-text'}
                   size={18}
-                  color="#FFFFFF"
+                  color={item.kind === 'audio' ? VAULT_ACCENTS.violet.bright : VAULT_ACCENTS.emerald.bright}
                 />
               </View>
               <View style={styles.rowText}>
-                <ThemedText type="small" numberOfLines={1}>
+                <Text style={[styles.rowName, { color: palette.text }]} numberOfLines={1}>
                   {item.name}
-                </ThemedText>
-                <ThemedText type="code" themeColor="textSecondary" numberOfLines={1}>
+                </Text>
+                <Text style={[styles.rowMeta, { color: palette.textSecondary }]} numberOfLines={1}>
                   {`${item.ext.replace('.', '').toUpperCase() || 'FILE'} · ${formatBytes(item.size)}`}
-                </ThemedText>
+                </Text>
               </View>
-              <Ionicons name="chevron-forward" size={16} color={theme.textSecondary} />
+              <Ionicons name="chevron-forward" size={16} color={palette.textSecondary} />
             </Pressable>
           )}
           ItemSeparatorComponent={() => <View style={styles.separator} />}
+          ListFooterComponent={<AdBanner />}
         />
-        <Fab label="Import files" onPress={() => router.push('/vault/import')} />
+        <Fab accent="emerald" label="Import files" onPress={() => router.push('/vault/import')} />
       </SafeAreaView>
-    </ThemedView>
+    </View>
   );
 }
 
@@ -135,24 +147,23 @@ const styles = StyleSheet.create({
     paddingTop: Spacing.two,
     paddingBottom: Spacing.one,
   },
-  title: {
-    fontSize: 24,
-    lineHeight: 30,
-    fontFamily: Fonts.sansBold,
+  meta: {
+    fontFamily: Fonts.sansMedium,
+    fontSize: 13,
   },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.three,
     borderRadius: Radius.lg,
+    borderWidth: 1,
     paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.three,
+    paddingVertical: Spacing.three - 2,
   },
   iconCircle: {
-    width: 36,
-    height: 36,
-    borderRadius: Radius.sm,
-    backgroundColor: '#10B981',
+    width: 40,
+    height: 40,
+    borderRadius: 13,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -160,8 +171,18 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: 1,
   },
+  rowName: {
+    fontFamily: Fonts.sansSemiBold,
+    fontSize: 15,
+    lineHeight: 20,
+  },
+  rowMeta: {
+    fontFamily: Fonts.sans,
+    fontSize: 12,
+    lineHeight: 16,
+  },
   separator: {
-    height: 0,
+    height: Spacing.two,
   },
   emptyBox: {
     alignItems: 'center',
@@ -172,6 +193,8 @@ const styles = StyleSheet.create({
   emptyText: {
     textAlign: 'center',
     lineHeight: 20,
+    fontFamily: Fonts.sans,
+    fontSize: 14,
   },
   pressed: {
     opacity: 0.75,

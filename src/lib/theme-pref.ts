@@ -5,7 +5,12 @@ export type ThemePref = 'system' | 'light' | 'dark';
 
 const STORE_KEY = 'theme.pref';
 
-let current: ThemePref = 'system';
+/**
+ * HideMe is dark-first: the app opens on the slate-and-indigo board, not on
+ * whatever the system happens to be. The user can still switch to Light or
+ * System in Settings.
+ */
+let current: ThemePref = 'dark';
 let loaded = false;
 const listeners = new Set<() => void>();
 

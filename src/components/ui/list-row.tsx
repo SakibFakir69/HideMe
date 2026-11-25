@@ -4,7 +4,7 @@ import type { ReactNode } from 'react';
 
 import { ThemedText } from '@/components/themed-text';
 import { Fonts, Radius, Spacing } from '@/constants/theme';
-import { useTheme } from '@/hooks/use-theme';
+import { useVaultPalette } from '@/hooks/use-vault-palette';
 
 interface ListRowProps {
   icon: keyof typeof Ionicons.glyphMap;
@@ -36,39 +36,39 @@ export function ListRow({
   disabled,
   divider,
 }: ListRowProps) {
-  const theme = useTheme();
-  const tint = destructive ? '#EF4444' : theme.text;
+  const palette = useVaultPalette();
+  const tint = destructive ? '#EF4444' : palette.text;
 
   const body = (
     <View style={styles.inner}>
-      <View style={[styles.iconCircle, { backgroundColor: iconColor ?? theme.backgroundSelected }]}>
+      <View style={[styles.iconCircle, { backgroundColor: iconColor ?? palette.chip }]}>
         <Ionicons name={icon} size={17} color={iconColor ? '#FFFFFF' : tint} />
       </View>
       <View style={styles.text}>
-        <ThemedText type="small" style={destructive ? styles.destructive : undefined} numberOfLines={1}>
+        <ThemedText type="small" style={[destructive ? styles.destructive : undefined, { color: tint }]} numberOfLines={1}>
           {title}
         </ThemedText>
         {subtitle !== undefined && subtitle.length > 0 && (
-          <ThemedText type="code" themeColor="textSecondary" numberOfLines={1} style={styles.subtitle}>
+          <ThemedText type="code" style={[styles.subtitle, { color: palette.textSecondary }]} numberOfLines={1}>
             {subtitle}
           </ThemedText>
         )}
       </View>
-      {loading && <ActivityIndicator size="small" color={theme.tint} />}
+      {loading && <ActivityIndicator size="small" color={palette.accent} />}
       {value !== undefined && (
-        <ThemedText type="small" themeColor="textSecondary" numberOfLines={1}>
+        <ThemedText type="small" style={{ color: palette.textSecondary }} numberOfLines={1}>
           {value}
         </ThemedText>
       )}
       {right}
       {onPress && !right && !loading && (
-        <Ionicons name="chevron-forward" size={16} color={theme.textSecondary} />
+        <Ionicons name="chevron-forward" size={16} color={palette.textSecondary} />
       )}
     </View>
   );
 
   const dividerStyle = divider
-    ? { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.border }
+    ? { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: palette.border }
     : undefined;
 
   if (!onPress)

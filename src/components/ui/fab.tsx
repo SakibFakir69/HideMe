@@ -2,15 +2,19 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Pressable, StyleSheet } from 'react-native';
 
-import { BrandGradient, Radius } from '@/constants/theme';
+import { VAULT_ACCENTS, type VaultAccent } from '@/constants/vault-theme';
+import { Radius } from '@/constants/theme';
 
 interface FabProps {
   onPress: () => void;
   label?: string;
+  /** The accent of the screen the button sits on. */
+  accent?: VaultAccent;
 }
 
-/** Primary action FAB — bottom-right, brand gradient (board: "+"). */
-export function Fab({ onPress, label = 'Add' }: FabProps) {
+/** Primary action FAB — bottom-right, the screen accent with a glow. */
+export function Fab({ onPress, label = 'Add', accent = 'emerald' }: FabProps) {
+  const tone = VAULT_ACCENTS[accent];
   return (
     <Pressable
       onPress={onPress}
@@ -18,11 +22,11 @@ export function Fab({ onPress, label = 'Add' }: FabProps) {
       accessibilityLabel={label}
       style={({ pressed }) => [styles.wrap, pressed && styles.pressed]}>
       <LinearGradient
-        colors={[...BrandGradient]}
+        colors={tone.gradient}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={styles.gradient}>
-        <Ionicons name="add" size={28} color="#FFFFFF" />
+        <Ionicons name="add" size={30} color="#FFFFFF" />
       </LinearGradient>
     </Pressable>
   );
@@ -33,15 +37,15 @@ const styles = StyleSheet.create({
     position: 'absolute',
     right: 20,
     bottom: 24,
-    shadowColor: '#6366F1',
-    shadowOpacity: 0.45,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 8,
+    shadowColor: '#10B981',
+    shadowOpacity: 0.55,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 10,
   },
   gradient: {
-    width: 56,
-    height: 56,
+    width: 60,
+    height: 60,
     borderRadius: Radius.pill,
     alignItems: 'center',
     justifyContent: 'center',

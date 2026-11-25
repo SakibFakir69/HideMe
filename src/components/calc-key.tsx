@@ -1,8 +1,9 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import { Pressable, StyleSheet, Text } from 'react-native';
 
-import { BrandGradient, Fonts, Palette, Radius } from '@/constants/theme';
-import { useTheme } from '@/hooks/use-theme';
+import { Fonts, Radius } from '@/constants/theme';
+import { VAULT_ACCENTS } from '@/constants/vault-theme';
+import { useVaultPalette } from '@/hooks/use-vault-palette';
 
 export type KeyVariant = 'digit' | 'fn' | 'op' | 'accent';
 
@@ -26,21 +27,21 @@ export function CalcKey({
   span = 1,
   minHeight,
 }: CalcKeyProps) {
-  const theme = useTheme();
+  const palette = useVaultPalette();
 
   const surface =
     variant === 'digit'
-      ? theme.backgroundElement
+      ? palette.surface
       : variant === 'op'
-        ? Palette.primary
+        ? palette.accent
         : 'transparent';
 
   const foreground =
     variant === 'op' || variant === 'accent'
       ? '#FFFFFF'
       : variant === 'digit'
-        ? theme.text
-        : theme.textSecondary;
+        ? palette.text
+        : palette.textSecondary;
 
   const keyStyle = (
     pressed: boolean,
@@ -77,7 +78,7 @@ export function CalcKey({
           keyStyle(pressed),
         ]}>
         <LinearGradient
-          colors={[...BrandGradient]}
+          colors={VAULT_ACCENTS.emerald.gradient}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={styles.accentFill}>

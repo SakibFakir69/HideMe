@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 
 import { ActionSheetModal } from '@/components/vault/action-sheet-modal';
-import { useTheme } from '@/hooks/use-theme';
+import { useVaultPalette } from '@/hooks/use-vault-palette';
 import { useVaultIndex } from '@/hooks/use-vault-index';
 import { getMasterKey } from '@/lib/vault-session';
 import { moveItemsToFolder } from '@/lib/vault-store';
@@ -16,7 +16,7 @@ interface MoveItemsSheetProps {
 
 /** Folder picker for a multi-select batch move. */
 export function MoveItemsSheet({ visible, ids, onClose, onChanged }: MoveItemsSheetProps) {
-  const theme = useTheme();
+  const palette = useVaultPalette();
   const { index } = useVaultIndex();
   if (!visible || !index || ids.length === 0) return null;
 
@@ -24,7 +24,7 @@ export function MoveItemsSheet({ visible, ids, onClose, onChanged }: MoveItemsSh
   const actions = [
     {
       label: 'All items (no folder)',
-      icon: <Ionicons name="folder-open-outline" size={18} color={theme.text} />,
+      icon: <Ionicons name="folder-open-outline" size={18} color={palette.text} />,
       onSelect: async () => {
         await moveItemsToFolder(getMasterKey(), ids, null);
         onChanged();
@@ -32,7 +32,7 @@ export function MoveItemsSheet({ visible, ids, onClose, onChanged }: MoveItemsSh
     },
     ...index.folders.map((folder) => ({
       label: folder.name,
-      icon: <Ionicons name="folder-outline" size={18} color={theme.text} />,
+      icon: <Ionicons name="folder-outline" size={18} color={palette.text} />,
       onSelect: async () => {
         await moveItemsToFolder(getMasterKey(), ids, folder.id);
         onChanged();

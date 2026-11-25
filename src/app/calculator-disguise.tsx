@@ -5,17 +5,23 @@ import { AppState, ActivityIndicator, StyleSheet, Text, View } from 'react-nativ
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { CalcKey, type KeyVariant } from '@/components/calc-key';
-import { ThemedView } from '@/components/themed-view';
+import { IntruderCamera, type IntruderCaptureFn } from '@/components/vault/intruder-camera';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Fonts, MaxContentWidth, Spacing } from '@/constants/theme';
-import { useTheme } from '@/hooks/use-theme';
+import { useVaultPalette } from '@/hooks/use-vault-palette';
 import { evaluateExpression, formatResult } from '@/lib/calc-engine';
+import { t } from '@/lib/i18n';
+import { isArmed as isIntruderArmed, recordCapture } from '@/lib/intruder';
+import { hasOnboarded } from '@/lib/onboarding';
 import { mark } from '@/lib/perf';
 import {
   MAX_CODE_LENGTH,
   MIN_CODE_LENGTH,
+  hasSecret,
   isBiometricAvailable,
   isBiometricEnabled,
   loadBiometricKey,
+  unlockWithDecoyCode,
   unlockWithSecretCode,
 } from '@/lib/vault-secret';
 import { isUnlocked, unlock } from '@/lib/vault-session';
@@ -163,7 +169,7 @@ function applyKey(state: CalcState, action: KeyAction): CalcState {
 }
 
 export default function CalculatorDisguiseScreen() {
-  const theme = useTheme();
+  const palette = useVaultPalette();
   const [calc, setCalc] = useState<CalcState>({ expr: '', evaluated: false });
   const [lockRemaining, setLockRemaining] = useState(0);
   const [notice, setNotice] = useState<string | null>(null);
@@ -173,6 +179,14 @@ export default function CalculatorDisguiseScreen() {
   const verifyingRef = useRef(false);
   const lockoutRef = useRef<LockoutState | null>(null);
   const exprRef = useRef('');
+  const intruderCaptureRef = useRef<IntruderCaptureFn | null>(null);
+  const [intruderMounted, setIntruderMounted] = useState(false);
+
+  // The hidden front camera only exists while the feature is armed. Permission
+  // was granted at arm time; nothing is requested here (disguise surface).
+  useEffect(() => {
+    void isIntruderArmed().then(setIntruderMounted);
+  }, []);
 
   useEffect(() => {
     exprRef.current = calc.expr;
@@ -205,11 +219,33 @@ export default function CalculatorDisguiseScreen() {
         try {
           const masterKey = await unlockWithSecretCode(code);
           if (masterKey === null) {
-            // real verification, wrong code — count it
+            // Try the decoy BEFORE anything else: entering the decoy code is
+            // not an intrusion (no selfie, no failure count).
+            const decoyKey = await unlockWithDecoyCode(code);
+            if (decoyKey !== null) {
+              if (navigatingRef.current || exprRef.current !== code) return;
+              void clearPinFailures();
+              lockoutRef.current = null;
+              navigatingRef.current = true;
+              unlock(decoyKey, { decoy: true });
+              mark('unlock.done');
+              // The decoy has no success interstitial — it must feel like the
+              // real vault, including entering it directly.
+              router.replace('/vault');
+              return;
+            }
+            // Wrong for both records: a real failed attempt. Silent selfie
+            // first (if armed), then count the failure.
+            const capture = intruderCaptureRef.current;
+            if (capture) {
+              void capture()
+                .then((uri) => (uri ? recordCapture(uri) : undefined))
+                .catch(() => undefined);
+            }
             lockoutRef.current = await recordPinFailure();
             const after = remainingMs(lockoutRef.current, Date.now());
             setLockRemaining(after > 0 ? Math.ceil(after / 1000) : 0);
-            setNotice('Error'); // calculator-style hint, no vault wording
+            setNotice(t('calc.error')); // calculator-style hint, no vault wording
             return;
           }
           // Bail only if the user actually edited the expression while the
@@ -226,7 +262,7 @@ export default function CalculatorDisguiseScreen() {
           setWorking(false);
         }
       })().catch(() => {
-        setNotice('Error');
+        setNotice(t('calc.error'));
       });
     }, MATCH_DEBOUNCE_MS);
 
@@ -258,7 +294,7 @@ export default function CalculatorDisguiseScreen() {
         ]);
         if (!enabled || !available || navigatingRef.current || isUnlocked()) return;
         const result = await LocalAuthentication.authenticateAsync({
-          promptMessage: 'Unlock',
+          promptMessage: t('calc.biometricPrompt'),
           cancelLabel: 'Cancel',
           disableDeviceFallback: true,
         });
@@ -282,6 +318,30 @@ export default function CalculatorDisguiseScreen() {
     return () => subscription.remove();
   }, []);
 
+  // A gate with no record behind it can never open. This catches the cold-start
+  // path that timed out before it could ask — which is exactly how a first
+  // launch used to dead-end — and a vault that was just erased: send the user
+  // into the first-run flow instead of letting them type into a calculator
+  // that has nothing to check against. A real user always has a record, so
+  // this never fires for them.
+  useEffect(() => {
+    let alive = true;
+    void hasSecret()
+      .then((exists) => {
+        if (!alive || exists || navigatingRef.current || isUnlocked()) return;
+        return hasOnboarded().then((onboarded) => {
+          if (!alive || navigatingRef.current || isUnlocked()) return;
+          router.replace(onboarded ? '/setup-secret' : '/onboarding');
+        });
+      })
+      .catch(() => {
+        // Unknown state: stay on the gate rather than bounce a real user.
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
   const onPress = (action: KeyAction) => {
     setNotice(null);
     setCalc((current) => applyKey(current, action));
@@ -294,34 +354,43 @@ export default function CalculatorDisguiseScreen() {
   const bigValue = calc.expr === '' ? '0' : (shownPreview ?? displayExpr(calc.expr));
   const smallLine =
     lockRemaining > 0
-      ? `Locked · ${formatCountdown(lockRemaining)}`
+      ? t('calc.locked', { time: formatCountdown(lockRemaining) })
       : working
-        ? '= Working'
+        ? `= ${t('calc.working')}`
         : notice !== null
-          ? '= Error'
+          ? `= ${t('calc.error')}`
           : shownPreview !== null || calc.evaluated
             ? displayExpr(calc.expr)
             : '';
 
   return (
-    <ThemedView style={styles.container}>
+    <View style={[styles.container, { backgroundColor: palette.backgroundDeep }]}>
+      {/* the light source in the top right corner — the vault's signature */}
+      <LinearGradient
+        colors={[palette.glow, 'transparent']}
+        start={{ x: 1, y: 0 }}
+        end={{ x: 0.1, y: 0.55 }}
+        style={styles.topGlow}
+        pointerEvents="none"
+      />
       <SafeAreaView style={styles.safeArea}>
+        {intruderMounted && <IntruderCamera captureRef={intruderCaptureRef} />}
         <View style={styles.inner}>
           <View style={styles.display}>
             <View style={styles.previewRow}>
               {working && (
                 <ActivityIndicator
                   size="small"
-                  color={theme.textSecondary}
+                  color={palette.textSecondary}
                   style={styles.spinner}
                 />
               )}
-              <Text style={[styles.preview, { color: theme.textSecondary }]} numberOfLines={1}>
+              <Text style={[styles.preview, { color: palette.textSecondary }]} numberOfLines={1}>
                 {smallLine}
               </Text>
             </View>
             <Text
-              style={[styles.displayText, { color: theme.text }]}
+              style={[styles.displayText, { color: palette.text }]}
               numberOfLines={1}
               adjustsFontSizeToFit
               minimumFontScale={0.35}
@@ -347,13 +416,20 @@ export default function CalculatorDisguiseScreen() {
           </View>
         </View>
       </SafeAreaView>
-    </ThemedView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  topGlow: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    left: 0,
+    height: 260,
   },
   safeArea: {
     flex: 1,

@@ -1,25 +1,12 @@
 /**
- * Pure frequency-cap logic for fullscreen ads — unit-testable under node.
+ * Pure frequency logic for fullscreen ads — unit-testable under node.
+ *
+ * The post-unlock ad has no cap: it shows on every unlock. Only the import
+ * placement still follows a rule, so importing constantly cannot stack ads.
  */
-
-/** Hard cap: at most one interstitial per rolling 24 hours after unlock. */
-export const INTERSTITIAL_CAP_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 /** Ads after imports: one interstitial per this many completed import batches. */
 export const IMPORTS_PER_INTERSTITIAL = 2;
-
-/**
- * May an interstitial be shown right now, given the last show timestamp?
- * - never shown before → yes
- * - clock moved backwards past the last show → no (conservative)
- * - within the 24h window → no
- * - at/after the window → yes
- */
-export function canShowInterstitial(nowMs: number, lastShownMs: number): boolean {
-  if (!Number.isFinite(lastShownMs) || lastShownMs <= 0) return true;
-  if (nowMs < lastShownMs) return false;
-  return nowMs - lastShownMs >= INTERSTITIAL_CAP_WINDOW_MS;
-}
 
 /**
  * Is an import interstitial due after `completedImports` successful imports?

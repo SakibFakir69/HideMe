@@ -1,7 +1,7 @@
 import type { InterstitialAd, RewardedAd } from 'react-native-google-mobile-ads';
 import * as SecureStore from 'expo-secure-store';
 
-import { canShowInterstitial, isImportInterstitialDue } from './ads-cap-core';
+import { isImportInterstitialDue } from './ads-cap-core';
 import { getAdsModule, resolveUnitId, type AdsModule } from './ads-native';
 import { isPremium } from './premium';
 
@@ -16,13 +16,11 @@ import { isPremium } from './premium';
  * decoration around a working vault.
  */
 
-const LAST_INTERSTITIAL_KEY = 'ads.interstitial.lastShown';
 const IMPORT_COUNT_KEY = 'ads.imports.completed';
 
 let initPromise: Promise<AdsModule | null> | null = null;
 let interstitial: InterstitialAd | null = null;
 let interstitialLoaded = false;
-let lastInterstitialShownAt = 0;
 let completedImports = 0;
 
 let rewarded: RewardedAd | null = null;
@@ -36,12 +34,7 @@ function ensureReady(): Promise<AdsModule | null> {
       if (!ads) return null;
       try {
         if (await SecureStore.isAvailableAsync()) {
-          const [lastRaw, importsRaw] = await Promise.all([
-            SecureStore.getItemAsync(LAST_INTERSTITIAL_KEY),
-            SecureStore.getItemAsync(IMPORT_COUNT_KEY),
-          ]);
-          const parsed = Number(lastRaw ?? 0);
-          if (Number.isFinite(parsed) && parsed > 0) lastInterstitialShownAt = parsed;
+          const importsRaw = await SecureStore.getItemAsync(IMPORT_COUNT_KEY);
           const imports = Number.parseInt(importsRaw ?? '', 10);
           if (Number.isFinite(imports) && imports > 0) completedImports = imports;
         }
@@ -57,15 +50,6 @@ function ensureReady(): Promise<AdsModule | null> {
     })();
   }
   return initPromise;
-}
-
-async function persistLastInterstitial(now: number): Promise<void> {
-  try {
-    if (!(await SecureStore.isAvailableAsync())) return;
-    await SecureStore.setItemAsync(LAST_INTERSTITIAL_KEY, String(now));
-  } catch {
-    // best-effort
-  }
 }
 
 async function persistCompletedImports(count: number): Promise<void> {
@@ -131,30 +115,48 @@ export function initAds(): void {
   }, 1_500);
 }
 
+/** How long to wait for a fullscreen ad to finish loading before giving up. */
+const AD_LOAD_WAIT_MS = 4_000;
+
 /**
- * Unlock interstitial: shown after a successful unlock when the rolling 24h
- * cap allows and an ad is already loaded. Never throws; never blocks
- * navigation (call after it). Delays ~800ms so the destination screen feels
- * instant.
+ * Resolves true as soon as `isLoaded()` flips, false once the wait expires.
+ *
+ * The first unlock of a session used to only *prime* the ad object and return,
+ * so the user saw nothing until some later opportunity. Waiting here is what
+ * makes the very first unlock show an ad.
+ */
+async function waitUntilLoaded(isLoaded: () => boolean, timeoutMs: number): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    if (isLoaded()) return true;
+    if (Date.now() >= deadline) return isLoaded();
+    await new Promise<void>((resolve) => setTimeout(resolve, 100));
+  }
+}
+
+/**
+ * Unlock ad: shown after a successful unlock, on every unlock.
+ *
+ * Interstitial first; when no interstitial arrives in time, a rewarded ad
+ * takes its place so an ad still appears (and the user keeps a way to close
+ * it). Never throws and never blocks navigation — call it after the router
+ * has moved, so the vault is already on screen underneath.
  */
 export async function maybeShowInterstitial(): Promise<void> {
   try {
     if (isPremium()) return;
     const ads = await ensureReady();
     if (!ads) return;
-    const now = Date.now();
-    if (!canShowInterstitial(now, lastInterstitialShownAt)) return;
-    if (!interstitial) {
-      createInterstitial(ads);
+    if (!interstitial) createInterstitial(ads);
+    if (await waitUntilLoaded(() => interstitialLoaded, AD_LOAD_WAIT_MS)) {
+      await presentLoadedInterstitial();
       return;
     }
-    if (!interstitialLoaded) {
-      interstitial.load();
-      return;
-    }
-    lastInterstitialShownAt = now;
-    void persistLastInterstitial(now);
-    await presentLoadedInterstitial();
+    // No interstitial: fall back to the rewarded placement instead of
+    // showing nothing at all.
+    if (!rewarded) createRewarded(ads);
+    await waitUntilLoaded(() => rewardedLoaded, AD_LOAD_WAIT_MS);
+    await showRewardedAd();
   } catch {
     // not loaded / declined / destroyed — never surface to the user
   }

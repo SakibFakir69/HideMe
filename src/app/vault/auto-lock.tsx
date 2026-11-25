@@ -11,10 +11,9 @@ import { Chip } from '@/components/ui/chip';
 import { GradientButton } from '@/components/ui/gradient-button';
 import { ScreenHeader } from '@/components/ui/screen-header';
 import { SectionTitle } from '@/components/ui/section-title';
-import { ThemedView } from '@/components/themed-view';
 import { AUTO_LOCK_PAUSE_MS } from '@/constants/ads';
 import { Fonts, MaxContentWidth, Palette, Radius, Spacing } from '@/constants/theme';
-import { useTheme } from '@/hooks/use-theme';
+import { useVaultPalette } from '@/hooks/use-vault-palette';
 import { usePremium } from '@/lib/premium';
 import {
   AUTOLOCK_OPTIONS,
@@ -34,7 +33,7 @@ const OPTION_LABEL = new Map<AutoLockSeconds, string>([
 ]);
 
 export default function AutoLockScreen() {
-  const theme = useTheme();
+  const palette = useVaultPalette();
   const premium = usePremium();
   const [seconds, setSeconds] = useState<AutoLockSeconds | null>(null);
   const [pauseUntil, setPauseUntil] = useState(() => getAutoLockOverrideUntil());
@@ -106,7 +105,7 @@ export default function AutoLockScreen() {
   }, []);
 
   return (
-    <ThemedView style={styles.container}>
+    <View style={[styles.container, { backgroundColor: palette.background }]}>
       <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
         <View style={styles.headerWrap}>
           <ScreenHeader title="Auto-lock timer" onBack={() => router.back()} />
@@ -116,18 +115,18 @@ export default function AutoLockScreen() {
           <View
             style={[
               styles.hero,
-              { backgroundColor: theme.backgroundElement, borderColor: theme.border },
+              { backgroundColor: palette.surface, borderColor: palette.border },
             ]}>
-            <View style={[styles.ring, { borderColor: pauseActive ? Palette.success : theme.border }]}>
+            <View style={[styles.ring, { borderColor: pauseActive ? Palette.success : palette.border }]}>
               <Ionicons
                 name={pauseActive ? 'time-outline' : 'lock-closed-outline'}
                 size={20}
-                color={pauseActive ? Palette.success : theme.textSecondary}
+                color={pauseActive ? Palette.success : palette.textSecondary}
               />
-              <Text style={[styles.countdown, { color: theme.text }]}>
+              <Text style={[styles.countdown, { color: palette.text }]}>
                 {pauseActive ? formatCountdown(pauseRemaining) : '—:—'}
               </Text>
-              <Text style={[styles.ringLabel, { color: theme.textSecondary }]}>
+              <Text style={[styles.ringLabel, { color: palette.textSecondary }]}>
                 {pauseActive ? 'pause remaining' : 'no pause active'}
               </Text>
             </View>
@@ -154,9 +153,9 @@ export default function AutoLockScreen() {
           </View>
 
           <SectionTitle label="Pause" />
-          <View style={[styles.card, { backgroundColor: theme.backgroundElement }]}>
+          <View style={[styles.card, { backgroundColor: palette.surface }]}>
             <View style={styles.cardRow}>
-              <View style={[styles.cardIcon, { backgroundColor: theme.backgroundSelected }]}>
+              <View style={[styles.cardIcon, { backgroundColor: palette.surfaceHigh }]}>
                 <Ionicons
                   name={premium.active ? 'ribbon-outline' : 'gift-outline'}
                   size={20}
@@ -197,7 +196,7 @@ export default function AutoLockScreen() {
           </View>
 
           <SectionTitle label="Lock" />
-          <View style={[styles.card, { backgroundColor: theme.backgroundElement }]}>
+          <View style={[styles.card, { backgroundColor: palette.surface }]}>
             <View style={styles.cardRow}>
               <View style={[styles.cardIcon, { backgroundColor: 'rgba(239,68,68,0.14)' }]}>
                 <Ionicons name="lock-closed-outline" size={20} color={Palette.error} />
@@ -219,8 +218,8 @@ export default function AutoLockScreen() {
             />
           </View>
 
-          <View style={[styles.note, { backgroundColor: theme.backgroundElement }]}>
-            <Ionicons name="information-circle-outline" size={18} color={theme.textSecondary} />
+          <View style={[styles.note, { backgroundColor: palette.surface }]}>
+            <Ionicons name="information-circle-outline" size={18} color={palette.textSecondary} />
             <ThemedText type="code" themeColor="textSecondary" style={styles.noteText}>
               A pause is not a security downgrade you can forget about: “Immediately” always locks,
               and “Lock now” ignores any active pause.
@@ -234,7 +233,7 @@ export default function AutoLockScreen() {
         onClose={() => setPauseSheetOpen(false)}
         onGranted={onPauseGranted}
       />
-    </ThemedView>
+    </View>
   );
 }
 

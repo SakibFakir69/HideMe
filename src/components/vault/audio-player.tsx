@@ -3,7 +3,7 @@ import { useEffect } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { Fonts, Palette, Spacing } from '@/constants/theme';
-import { useTheme } from '@/hooks/use-theme';
+import { useVaultPalette } from '@/hooks/use-vault-palette';
 
 type AudioApi = typeof import('expo-audio');
 
@@ -63,7 +63,7 @@ function AudioStage({
   name,
   isActive,
 }: AudioPlayerProps & { api: AudioApi }) {
-  const theme = useTheme();
+  const palette = useVaultPalette();
   const player = api.useAudioPlayer({ uri });
   const status = api.useAudioPlayerStatus(player);
 
@@ -128,7 +128,7 @@ function AudioStage({
             : 'Loading…'}
         </Text>
       </View>
-      <Text style={[styles.notice, { color: theme.textSecondary }]}>
+      <Text style={[styles.notice, { color: palette.textSecondary }]}>
         Audio files are decrypted on demand and never leave this device.
       </Text>
     </View>

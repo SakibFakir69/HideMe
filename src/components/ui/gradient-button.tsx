@@ -1,14 +1,15 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import { ActivityIndicator, Pressable, StyleSheet, Text, type ViewStyle } from 'react-native';
 
-import { BrandGradient, Fonts, Radius, Spacing } from '@/constants/theme';
+import { Fonts, Radius, Spacing } from '@/constants/theme';
+import { VAULT_ACCENTS } from '@/constants/vault-theme';
 
 interface GradientButtonProps {
   label: string;
   onPress: () => void;
   disabled?: boolean;
   loading?: boolean;
-  /** 'primary' = brand gradient, 'ghost' = transparent text button */
+  /** 'primary' = emerald gradient, 'ghost' = transparent text button */
   variant?: 'primary' | 'ghost';
   style?: ViewStyle;
 }
@@ -42,7 +43,7 @@ export function GradientButton({
       accessibilityRole="button"
       style={({ pressed }) => [style, pressed && styles.pressed, inactive && styles.inactive]}>
       <LinearGradient
-        colors={[...BrandGradient]}
+        colors={VAULT_ACCENTS.emerald.gradient}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={styles.gradient}>

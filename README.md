@@ -23,6 +23,7 @@ Type your secret code into the calculator keypad and the vault opens. Anyone els
 - Dedicated Auto-lock Timer screen: policy, live pause countdown, rewarded pause, lock now
 - Cleanup reminders: one generic daily notification while Recently Deleted holds items
 - Launcher disguise: Calculator / Notes / Photos / Weather / Music icons, hide-the-icon mode, `*#*#48263#*#*` restore
+- Dark-first vault design: a deep navy console with one emerald accent, a category-tile home, a justified gallery, and a settings screen where every row carries its own icon hue
 
 ## Get started
 

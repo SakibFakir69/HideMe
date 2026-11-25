@@ -21,6 +21,8 @@ export default function VaultLayout() {
         <Stack.Screen name="premium" />
         <Stack.Screen name="auto-lock" />
         <Stack.Screen name="app-icon" />
+        <Stack.Screen name="intruder" />
+        <Stack.Screen name="backup" />
       </Stack>
       <ToastHost />
     </>

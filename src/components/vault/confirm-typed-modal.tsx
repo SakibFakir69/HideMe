@@ -11,7 +11,7 @@ import {
 
 import { ThemedText } from '@/components/themed-text';
 import { Fonts, Palette, Spacing } from '@/constants/theme';
-import { useTheme } from '@/hooks/use-theme';
+import { useVaultPalette } from '@/hooks/use-vault-palette';
 
 interface ConfirmTypedModalProps {
   visible: boolean;
@@ -40,7 +40,7 @@ export function ConfirmTypedModal({
   onConfirm,
   onClose,
 }: ConfirmTypedModalProps) {
-  const theme = useTheme();
+  const palette = useVaultPalette();
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -73,7 +73,7 @@ export function ConfirmTypedModal({
       <KeyboardAvoidingView
         style={styles.backdrop}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <View style={[styles.card, { backgroundColor: theme.backgroundElement }]}>
+        <View style={[styles.card, { backgroundColor: palette.surface }]}>
           <ThemedText type="smallBold">{title}</ThemedText>
           <ThemedText type="small" themeColor="textSecondary">
             {message}
@@ -84,12 +84,12 @@ export function ConfirmTypedModal({
           <TextInput
             style={[
               styles.input,
-              { color: theme.text, borderBottomColor: theme.backgroundSelected },
+              { color: palette.text, borderBottomColor: palette.surfaceHigh },
             ]}
             value={text}
             onChangeText={setText}
             placeholder={phrase}
-            placeholderTextColor={theme.textSecondary}
+            placeholderTextColor={palette.textSecondary}
             autoFocus
             autoCapitalize="characters"
             autoCorrect={false}
@@ -103,7 +103,7 @@ export function ConfirmTypedModal({
               accessibilityRole="button"
               style={({ pressed }) => [
                 styles.button,
-                { backgroundColor: theme.backgroundSelected },
+                { backgroundColor: palette.surfaceHigh },
                 pressed && styles.pressed,
               ]}>
               <ThemedText type="small">Cancel</ThemedText>

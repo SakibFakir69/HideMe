@@ -1,14 +1,15 @@
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Redirect, router } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Animated, StyleSheet, Text, View } from 'react-native';
+import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { ThemedText } from '@/components/themed-text';
-import { GradientButton } from '@/components/ui/gradient-button';
-import { Fonts, MaxContentWidth, Palette, Spacing } from '@/constants/theme';
-import { useTheme } from '@/hooks/use-theme';
+import { Fonts, MaxContentWidth, Radius, Spacing } from '@/constants/theme';
+import { VAULT_TONES } from '@/constants/vault-theme';
+import { useVaultPalette } from '@/hooks/use-vault-palette';
 import { maybeShowInterstitial } from '@/lib/ads';
+import { t } from '@/lib/i18n';
 import { usePremium } from '@/lib/premium';
 import { useVaultUnlocked } from '@/lib/vault-session';
 
@@ -18,7 +19,7 @@ import { useVaultUnlocked } from '@/lib/vault-session';
  * on their files, and the natural place for the capped unlock interstitial.
  */
 export default function UnlockSuccessScreen() {
-  const theme = useTheme();
+  const palette = useVaultPalette();
   const unlocked = useVaultUnlocked();
   const premium = usePremium();
   const [checkScale] = useState(() => new Animated.Value(0.6));
@@ -50,50 +51,97 @@ export default function UnlockSuccessScreen() {
   };
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
-      <View style={styles.inner}>
-        <View style={styles.center}>
-          {!premium.active && (
-            <View style={[styles.shieldBadge, { backgroundColor: theme.backgroundElement }]}>
-              <Ionicons name="shield-checkmark-outline" size={16} color={Palette.success} />
-              <Text style={[styles.shieldText, { color: theme.textSecondary }]}>
-                End-to-end encrypted on this device
+    <View style={[styles.container, { backgroundColor: palette.background }]}>
+      {/* the light source in the top right corner — the vault's signature */}
+      <LinearGradient
+        colors={[palette.glow, 'transparent']}
+        start={{ x: 1, y: 0 }}
+        end={{ x: 0.1, y: 0.55 }}
+        style={styles.topGlow}
+        pointerEvents="none"
+      />
+
+      <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
+        <View style={[styles.inner, { maxWidth: MaxContentWidth }]}>
+          <View style={styles.center}>
+            {!premium.active && (
+              <View
+                style={[
+                  styles.shieldBadge,
+                  { backgroundColor: palette.surface, borderColor: palette.border },
+                ]}>
+                <Ionicons name="shield-checkmark" size={16} color={palette.accentBright} />
+                <Text style={[styles.shieldText, { color: palette.text }]}>
+                  {t('welcome.badge')}
+                </Text>
+              </View>
+            )}
+
+            <Animated.View
+              style={[
+                styles.orbRing,
+                {
+                  opacity: checkOpacity,
+                  transform: [{ scale: checkScale }],
+                },
+              ]}>
+              <LinearGradient
+                colors={['#34D399', '#059669']}
+                start={{ x: 0.2, y: 0 }}
+                end={{ x: 0.8, y: 1 }}
+                style={styles.orb}>
+                <Ionicons name="checkmark" size={58} color="#FFFFFF" />
+              </LinearGradient>
+            </Animated.View>
+
+            <Text style={[styles.title, { color: palette.text }]}>{t('welcome.title')}</Text>
+            <Text style={[styles.body, { color: palette.textSecondary }]}>
+              {t('welcome.body')}
+            </Text>
+
+            <View
+              style={[styles.tip, { backgroundColor: palette.surface, borderColor: palette.border }]}>
+              <View style={[styles.tipTile, { backgroundColor: VAULT_TONES.violet.wash }]}>
+                <Ionicons name="timer" size={17} color={VAULT_TONES.violet.color} />
+              </View>
+              <View style={[styles.tipDivider, { backgroundColor: palette.border }]} />
+              <Text style={[styles.tipText, { color: palette.textSecondary }]}>
+                {t('welcome.tip')}
               </Text>
             </View>
-          )}
+          </View>
 
-          <Animated.View
-            style={[
-              styles.checkOuter,
-              {
-                opacity: checkOpacity,
-                transform: [{ scale: checkScale }],
-              },
-            ]}>
-            <View style={styles.checkInner}>
-              <Ionicons name="checkmark" size={54} color="#FFFFFF" />
-            </View>
-          </Animated.View>
-
-          <ThemedText style={styles.title}>Welcome back!</ThemedText>
-          <ThemedText type="small" themeColor="textSecondary" style={styles.body}>
-            Your vault is now unlocked. Everything stays encrypted on this device.
-          </ThemedText>
-
-          <View style={[styles.tip, { backgroundColor: theme.backgroundElement }]}>
-            <Ionicons name="timer-outline" size={18} color={theme.tint} />
-            <ThemedText type="code" themeColor="textSecondary" style={styles.tipText}>
-              The vault locks again when the app goes to the background.
-            </ThemedText>
+          <View style={styles.actions}>
+            <Pressable
+              onPress={onContinue}
+              accessibilityRole="button"
+              accessibilityLabel={t('welcome.cta')}
+              style={({ pressed }) => [styles.ctaWrap, pressed && styles.pressed]}>
+              <LinearGradient
+                colors={['#7C3AED', '#2563EB']}
+                start={{ x: 0, y: 0.5 }}
+                end={{ x: 1, y: 0.5 }}
+                style={styles.cta}>
+                <Text style={styles.ctaLabel}>{t('welcome.cta')}</Text>
+                <Ionicons name="chevron-forward" size={20} color="#FFFFFF" />
+              </LinearGradient>
+            </Pressable>
+            <Pressable
+              onPress={() => router.push('/vault/premium')}
+              accessibilityRole="button"
+              accessibilityLabel={t('welcome.premium')}
+              style={({ pressed }) => [
+                styles.ghost,
+                { backgroundColor: palette.surface, borderColor: palette.border },
+                pressed && styles.pressed,
+              ]}>
+              <Text style={[styles.ghostLabel, { color: palette.text }]}>{t('welcome.premium')}</Text>
+              <Ionicons name="diamond-outline" size={18} color={palette.text} />
+            </Pressable>
           </View>
         </View>
-
-        <View style={styles.actions}>
-          <GradientButton label="Continue" onPress={onContinue} />
-          <GradientButton label="Go Premium" variant="ghost" onPress={() => router.push('/vault/premium')} />
-        </View>
-      </View>
-    </SafeAreaView>
+      </SafeAreaView>
+    </View>
   );
 }
 
@@ -101,10 +149,19 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
+  topGlow: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    left: 0,
+    height: 260,
+  },
+  safeArea: {
+    flex: 1,
+  },
   inner: {
     flex: 1,
     width: '100%',
-    maxWidth: MaxContentWidth,
     alignSelf: 'center',
     paddingHorizontal: Spacing.four,
     paddingVertical: Spacing.four,
@@ -114,61 +171,121 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: Spacing.two,
+    gap: Spacing.two + 2,
   },
   shieldBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.two,
-    paddingHorizontal: Spacing.three,
+    gap: Spacing.two - 2,
+    paddingHorizontal: Spacing.three + 2,
     paddingVertical: Spacing.two,
-    borderRadius: 999,
-    marginBottom: Spacing.five,
+    borderRadius: Radius.pill,
+    borderWidth: 1,
+    marginBottom: Spacing.four,
   },
   shieldText: {
     fontFamily: Fonts.sansMedium,
-    fontSize: 11,
+    fontSize: 13,
   },
-  checkOuter: {
-    width: 108,
-    height: 108,
-    borderRadius: 54,
+  orbRing: {
+    width: 148,
+    height: 148,
+    borderRadius: 74,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(16,185,129,0.16)',
+    backgroundColor: 'rgba(34,197,94,0.14)',
+    shadowColor: '#10B981',
+    shadowOpacity: 0.45,
+    shadowRadius: 28,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 12,
     marginBottom: Spacing.three,
   },
-  checkInner: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
+  orb: {
+    width: 112,
+    height: 112,
+    borderRadius: 56,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: Palette.success,
   },
   title: {
     fontFamily: Fonts.sansBold,
-    fontSize: 28,
-    lineHeight: 34,
+    fontSize: 30,
+    lineHeight: 37,
   },
   body: {
     textAlign: 'center',
     maxWidth: 320,
-    lineHeight: 20,
+    lineHeight: 21,
+    fontFamily: Fonts.sans,
+    fontSize: 15,
   },
   tip: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.two,
+    gap: Spacing.two + 2,
     paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.two,
-    borderRadius: 999,
+    paddingVertical: Spacing.two + 2,
+    borderRadius: Radius.lg,
+    borderWidth: 1,
     marginTop: Spacing.four,
+    alignSelf: 'stretch',
+  },
+  tipTile: {
+    width: 34,
+    height: 34,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tipDivider: {
+    width: 1,
+    alignSelf: 'stretch',
+    marginVertical: -Spacing.one,
   },
   tipText: {
-    fontSize: 11,
+    flex: 1,
+    fontFamily: Fonts.sans,
+    fontSize: 13.5,
+    lineHeight: 19,
   },
   actions: {
+    gap: Spacing.two,
+  },
+  ctaWrap: {
+    shadowColor: '#7C3AED',
+    shadowOpacity: 0.4,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 10,
+  },
+  cta: {
+    minHeight: 56,
+    borderRadius: Radius.pill,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
     gap: Spacing.one,
+  },
+  ctaLabel: {
+    color: '#FFFFFF',
+    fontFamily: Fonts.sansBold,
+    fontSize: 17,
+  },
+  ghost: {
+    minHeight: 54,
+    borderRadius: Radius.pill,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.one + 2,
+    borderWidth: 1,
+  },
+  ghostLabel: {
+    fontFamily: Fonts.sansBold,
+    fontSize: 16,
+  },
+  pressed: {
+    opacity: 0.85,
   },
 });

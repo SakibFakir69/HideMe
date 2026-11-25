@@ -4,7 +4,7 @@ import type { ReactNode } from 'react';
 
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
-import { useTheme } from '@/hooks/use-theme';
+import { useVaultPalette } from '@/hooks/use-vault-palette';
 
 interface ScreenHeaderProps {
   title: string;
@@ -15,7 +15,7 @@ interface ScreenHeaderProps {
 }
 
 export function ScreenHeader({ title, onBack, right, centerTitle = true }: ScreenHeaderProps) {
-  const theme = useTheme();
+  const palette = useVaultPalette();
   return (
     <View style={styles.row}>
       {onBack ? (
@@ -26,17 +26,17 @@ export function ScreenHeader({ title, onBack, right, centerTitle = true }: Scree
           accessibilityLabel="Back"
           style={({ pressed }) => [
             styles.iconButton,
-            { backgroundColor: theme.backgroundElement },
+            { backgroundColor: palette.surface },
             pressed && styles.pressed,
           ]}>
-          <Ionicons name="chevron-back" size={20} color={theme.text} />
+          <Ionicons name="chevron-back" size={20} color={palette.text} />
         </Pressable>
       ) : (
         <View style={styles.iconButton} />
       )}
       <ThemedText
         type="smallBold"
-        style={[styles.title, !centerTitle && styles.titleLeft]}
+        style={[styles.title, { color: palette.text }, !centerTitle && styles.titleLeft]}
         numberOfLines={1}>
         {title}
       </ThemedText>

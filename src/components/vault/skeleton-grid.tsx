@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Animated, StyleSheet, View } from 'react-native';
 
 import { Radius, Spacing } from '@/constants/theme';
-import { useTheme } from '@/hooks/use-theme';
+import { useVaultPalette } from '@/hooks/use-vault-palette';
 
 interface SkeletonGridProps {
   /** How many tiles a row holds. */
@@ -19,7 +19,7 @@ interface SkeletonGridProps {
  * still being read and decrypted.
  */
 export function SkeletonGrid({ columns, rows = 3 }: SkeletonGridProps) {
-  const theme = useTheme();
+  const palette = useVaultPalette();
   const [pulse] = useState(() => new Animated.Value(0.35));
 
   useEffect(() => {
@@ -42,7 +42,7 @@ export function SkeletonGrid({ columns, rows = 3 }: SkeletonGridProps) {
               key={index}
               style={[
                 styles.tile,
-                { backgroundColor: theme.backgroundElement, opacity: pulse },
+                { backgroundColor: palette.surface, opacity: pulse },
               ]}
             />
           ))}

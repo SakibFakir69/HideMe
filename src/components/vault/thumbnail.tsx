@@ -5,7 +5,7 @@ import { StyleSheet, Text, View } from 'react-native';
 
 import { formatDuration } from '@/components/vault/format';
 import { Fonts, Spacing } from '@/constants/theme';
-import { useTheme } from '@/hooks/use-theme';
+import { useVaultPalette } from '@/hooks/use-vault-palette';
 import { getMasterKey } from '@/lib/vault-session';
 import { loadThumb, type VaultItem } from '@/lib/vault-store';
 
@@ -16,6 +16,8 @@ interface ThumbnailProps {
   /** Explicit tile size, for grids that keep the real photo ratio. */
   width?: number;
   height?: number;
+  /** Corner radius of the tile. */
+  radius?: number;
 }
 
 /**
@@ -27,8 +29,8 @@ interface ThumbnailProps {
  * while the thumb decrypts, so the grid never flashes a spinner or shifts
  * the layout once the image arrives.
  */
-export function Thumbnail({ item, size, width, height }: ThumbnailProps) {
-  const theme = useTheme();
+export function Thumbnail({ item, size, width, height, radius = Spacing.two }: ThumbnailProps) {
+  const palette = useVaultPalette();
   const [uri, setUri] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
 
@@ -60,7 +62,7 @@ export function Thumbnail({ item, size, width, height }: ThumbnailProps) {
         styles.box,
         styles.center,
         boxWidth > 0 && { width: boxWidth, height: boxHeight },
-        { backgroundColor: theme.backgroundElement },
+        { backgroundColor: palette.surface, borderRadius: radius },
       ]}>
       {item.kind === 'photo' &&
         (uri ? (
@@ -69,25 +71,25 @@ export function Thumbnail({ item, size, width, height }: ThumbnailProps) {
           <Ionicons
             name="image-outline"
             size={22}
-            color={theme.textSecondary}
+            color={palette.textSecondary}
             style={failed ? undefined : styles.placeholder}
           />
         ))}
       {item.kind === 'video' && (
-        <View style={styles.center}>
-          <Ionicons name="play-circle" size={26} color={theme.textSecondary} />
+        <>
+          <Ionicons name="play-circle" size={26} color={palette.textSecondary} />
           {duration && (
             <View style={[styles.badge, { backgroundColor: 'rgba(0,0,0,0.65)' }]}>
               <Text style={styles.durationText}>{duration}</Text>
             </View>
           )}
-        </View>
+        </>
       )}
       {item.kind === 'document' && (
-        <Ionicons name="document-text-outline" size={24} color={theme.textSecondary} />
+        <Ionicons name="document-text-outline" size={24} color={palette.textSecondary} />
       )}
       {item.kind === 'audio' && (
-        <Ionicons name="musical-notes-outline" size={24} color={theme.textSecondary} />
+        <Ionicons name="musical-notes-outline" size={24} color={palette.textSecondary} />
       )}
     </View>
   );
@@ -111,8 +113,8 @@ const styles = StyleSheet.create({
   },
   badge: {
     position: 'absolute',
-    bottom: 4,
-    right: 4,
+    top: 4,
+    left: 4,
     paddingHorizontal: 5,
     paddingVertical: 1,
     borderRadius: 4,

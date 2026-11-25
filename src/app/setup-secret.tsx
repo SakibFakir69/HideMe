@@ -4,7 +4,6 @@ import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Platform,
   Pressable,
   StyleSheet,
   Switch,
@@ -15,9 +14,12 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { CalcKey } from '@/components/calc-key';
 import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { BrandGradient, Fonts, MaxContentWidth, Radius, Spacing } from '@/constants/theme';
-import { useTheme } from '@/hooks/use-theme';
+import {
+  VAULT_ACCENTS,
+} from '@/constants/vault-theme';
+import { Fonts, MaxContentWidth, Radius, Spacing } from '@/constants/theme';
+import { useVaultPalette } from '@/hooks/use-vault-palette';
+import { biometricLabel, t } from '@/lib/i18n';
 import { mark } from '@/lib/perf';
 import {
   MAX_CODE_LENGTH,
@@ -45,10 +47,8 @@ const DIGIT_KEYS: { label: string; span?: number }[][] = [
   [{ label: '⌫' }, { label: '0', span: 2 }],
 ];
 
-const BIOMETRIC_LABEL = Platform.OS === 'ios' ? 'Face ID' : 'fingerprint';
-
 export default function SetupSecretScreen() {
-  const theme = useTheme();
+  const palette = useVaultPalette();
   const [form, setForm] = useState<FormState>({
     phase: 'checking',
     first: '',
@@ -100,7 +100,10 @@ export default function SetupSecretScreen() {
       if (f.entry.length < MIN_CODE_LENGTH) {
         return {
           ...f,
-          message: `Use at least ${MIN_CODE_LENGTH} digits — ${MIN_CODE_LENGTH - f.entry.length} to go.`,
+          message: t('setup.error.short', {
+            min: MIN_CODE_LENGTH,
+            remaining: MIN_CODE_LENGTH - f.entry.length,
+          }),
         };
       }
       if (f.phase === 'entry') {
@@ -112,7 +115,7 @@ export default function SetupSecretScreen() {
         return {
           ...f,
           entry: '',
-          message: 'Codes did not match — enter it once more.',
+          message: t('setup.error.mismatch'),
           phase: 'confirm',
         };
       }
@@ -133,7 +136,7 @@ export default function SetupSecretScreen() {
           () =>
             reject(
               new Error(
-                'Securing took too long. If you are on an emulator, try a physical device; otherwise retry.',
+                t('setup.error.slow'),
               ),
             ),
           90_000,
@@ -163,7 +166,7 @@ export default function SetupSecretScreen() {
           phase: 'entry',
           first: '',
           entry: '',
-          message: error instanceof Error ? error.message : 'Could not save the code.',
+          message: error instanceof Error ? error.message : t('setup.error.save'),
         });
       },
     );
@@ -176,48 +179,61 @@ export default function SetupSecretScreen() {
   const phase = form.phase;
   const entry = form.entry;
   const message = form.message;
-  const prompt = phase === 'confirm' ? 'Re-enter to confirm' : 'Choose your secret code';
+  const prompt = phase === 'confirm' ? t('setup.prompt.confirm') : t('setup.prompt.entry');
   const emptySlots = Math.max(0, MIN_CODE_LENGTH - entry.length);
-  const actionLabel = phase === 'confirm' ? 'Confirm' : 'Set';
+  const actionLabel = phase === 'confirm' ? t('setup.action.confirm') : t('setup.action.set');
   const subtitle =
     phase === 'already-set'
-      ? 'A secret code is already configured.'
+      ? t('setup.alreadySet')
       : phase === 'working'
-        ? 'Securing your code…'
-        : `${prompt} (${MIN_CODE_LENGTH}-${MAX_CODE_LENGTH} digits)`;
+        ? t('setup.securing')
+        : `${prompt} ${t('setup.range', { min: MIN_CODE_LENGTH, max: MAX_CODE_LENGTH })}`;
   const hint =
     message ||
     (phase === 'entry' || phase === 'confirm'
-      ? `${entry.length} of at least ${MIN_CODE_LENGTH} digits`
+      ? t('setup.count', { count: entry.length, min: MIN_CODE_LENGTH })
       : '');
 
   return (
-    <ThemedView style={styles.container}>
+    <View style={[styles.container, { backgroundColor: palette.background }]}>
+      {/* the light source in the top right corner — the vault's signature */}
+      <LinearGradient
+        colors={[palette.glow, 'transparent']}
+        start={{ x: 1, y: 0 }}
+        end={{ x: 0.1, y: 0.55 }}
+        style={styles.topGlow}
+        pointerEvents="none"
+      />
+
       <SafeAreaView style={styles.safeArea}>
         <View style={styles.inner}>
           <View style={styles.titleRow}>
             <LinearGradient
-              colors={[...BrandGradient]}
+              colors={VAULT_ACCENTS.emerald.gradient}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
               style={styles.brandBadge}>
               <Ionicons name="lock-closed" size={14} color="#FFFFFF" />
             </LinearGradient>
-            <ThemedText type="subtitle" style={styles.title}>
-              Vault setup
+            <ThemedText type="subtitle" style={[styles.title, { color: palette.text }]}>
+              {t('setup.title')}
             </ThemedText>
           </View>
 
           <View style={styles.subtitleRow}>
-            {phase === 'working' && <ActivityIndicator size="small" color={theme.tint} />}
+            {phase === 'working' && <ActivityIndicator size="small" color={palette.accent} />}
             <ThemedText type="small" themeColor="textSecondary" style={styles.subtitle}>
               {subtitle}
             </ThemedText>
           </View>
 
-          <View style={[styles.codeBox, { borderBottomColor: theme.backgroundSelected }]}>
+          <View
+            style={[
+              styles.codeBox,
+              { backgroundColor: palette.surface, borderColor: palette.border },
+            ]}>
             <Text
-              style={[styles.codeText, { color: theme.text }]}
+              style={[styles.codeText, { color: palette.text }]}
               numberOfLines={1}
               adjustsFontSizeToFit>
               {phase === 'already-set'
@@ -226,7 +242,7 @@ export default function SetupSecretScreen() {
                   ? '•'.repeat(entry.length)
                   : ''}
               {phase !== 'already-set' && emptySlots > 0 ? (
-                <Text style={{ color: theme.textSecondary }}>{'•'.repeat(emptySlots)}</Text>
+                <Text style={{ color: palette.textSecondary }}>{'•'.repeat(emptySlots)}</Text>
               ) : null}
             </Text>
           </View>
@@ -236,26 +252,30 @@ export default function SetupSecretScreen() {
           </ThemedText>
 
           {biometricAvailable && phase !== 'already-set' && (
-            <View style={[styles.biometricRow, { backgroundColor: theme.backgroundElement }]}>
-              <Ionicons name="finger-print" size={18} color={theme.textSecondary} />
+            <View
+              style={[
+                styles.biometricRow,
+                { backgroundColor: palette.surface, borderColor: palette.border },
+              ]}>
+              <Ionicons name="finger-print" size={18} color={palette.textSecondary} />
               <ThemedText type="small" style={styles.biometricLabel}>
-                Also unlock with {BIOMETRIC_LABEL}
+                {t('setup.biometric', { biometric: biometricLabel() })}
               </ThemedText>
               <Switch
                 value={biometricOptIn}
                 onValueChange={setBiometricOptIn}
                 disabled={phase === 'working'}
-                accessibilityLabel={`Also unlock with ${BIOMETRIC_LABEL}`}
-                trackColor={{ true: theme.tint, false: theme.backgroundSelected }}
+                accessibilityLabel={t('setup.biometric', { biometric: biometricLabel() })}
+                trackColor={{ true: palette.accent, false: palette.chip }}
                 thumbColor="#FFFFFF"
               />
             </View>
           )}
 
           <View style={styles.warningRow}>
-            <Ionicons name="warning-outline" size={15} color={theme.textSecondary} />
+            <Ionicons name="warning-outline" size={15} color={palette.textSecondary} />
             <ThemedText type="small" themeColor="textSecondary" style={styles.warningText}>
-              Choose something memorable. If you lose this code, your files cannot be recovered.
+              {t('setup.warning')}
             </ThemedText>
           </View>
 
@@ -265,21 +285,19 @@ export default function SetupSecretScreen() {
               accessibilityRole="button"
               style={({ pressed }) => [
                 styles.doneButton,
-                { backgroundColor: theme.backgroundElement },
+                { backgroundColor: palette.surface },
                 pressed && styles.pressed,
               ]}>
-              <ThemedText type="link">Open calculator</ThemedText>
+              <ThemedText type="link">{t('setup.openCalculator')}</ThemedText>
             </Pressable>
           ) : (
             <View
               style={[
                 styles.keypad,
-                { backgroundColor: theme.backgroundSelected, opacity: phase === 'entry' || phase === 'confirm' ? 1 : 0.4 },
+                { opacity: phase === 'entry' || phase === 'confirm' ? 1 : 0.4 },
               ]}>
               {DIGIT_KEYS.map((row, rowIndex) => (
-                <View
-                  key={rowIndex}
-                  style={[styles.row, { backgroundColor: theme.background }]}>
+                <View key={rowIndex} style={styles.row}>
                   {row.map((key) =>
                     key.label === '⌫' ? (
                       <CalcKey
@@ -302,7 +320,7 @@ export default function SetupSecretScreen() {
                   )}
                 </View>
               ))}
-              <View style={[styles.row, { backgroundColor: theme.background }]}>
+              <View style={styles.row}>
                 <CalcKey
                   label={actionLabel}
                   variant="accent"
@@ -315,7 +333,7 @@ export default function SetupSecretScreen() {
           )}
         </View>
       </SafeAreaView>
-    </ThemedView>
+    </View>
   );
 }
 
@@ -329,6 +347,13 @@ const KEY_HEIGHT = 52;
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  topGlow: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    left: 0,
+    height: 260,
   },
   safeArea: {
     flex: 1,
@@ -349,9 +374,9 @@ const styles = StyleSheet.create({
     marginTop: Spacing.three,
   },
   brandBadge: {
-    width: 26,
-    height: 26,
-    borderRadius: Radius.sm,
+    width: 28,
+    height: 28,
+    borderRadius: 9,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -371,7 +396,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     minHeight: 64,
-    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderRadius: Radius.lg,
+    borderWidth: 1,
     marginTop: Spacing.two,
   },
   codeText: {
@@ -390,6 +416,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.three,
     paddingVertical: Spacing.two,
     borderRadius: Radius.md,
+    borderWidth: 1,
   },
   biometricLabel: {
     flex: 1,

@@ -13,7 +13,7 @@ import {
 
 import { ThemedText } from '@/components/themed-text';
 import { Fonts, Spacing } from '@/constants/theme';
-import { useTheme } from '@/hooks/use-theme';
+import { useVaultPalette } from '@/hooks/use-vault-palette';
 import { MAX_CODE_LENGTH, MIN_CODE_LENGTH, changeSecretCode } from '@/lib/vault-secret';
 
 type Phase = 'old' | 'new' | 'confirm' | 'busy';
@@ -28,7 +28,7 @@ interface ChangeCodeModalProps {
  * end (changeSecretCode re-wraps the master key; files stay untouched).
  */
 export function ChangeCodeModal({ visible, onClose }: ChangeCodeModalProps) {
-  const theme = useTheme();
+  const palette = useVaultPalette();
   const [phase, setPhase] = useState<Phase>('old');
   const [entry, setEntry] = useState('');
   const [old, setOld] = useState('');
@@ -113,7 +113,7 @@ export function ChangeCodeModal({ visible, onClose }: ChangeCodeModalProps) {
       <KeyboardAvoidingView
         style={styles.backdrop}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <View style={[styles.card, { backgroundColor: theme.backgroundElement }]}>
+        <View style={[styles.card, { backgroundColor: palette.surface }]}>
           <ThemedText type="smallBold">Change secret code</ThemedText>
           <ThemedText type="small" themeColor="textSecondary">
             {phase === 'busy' ? 'Re-encrypting your key…' : prompt}
@@ -121,7 +121,7 @@ export function ChangeCodeModal({ visible, onClose }: ChangeCodeModalProps) {
 
           <TextInput
             ref={inputRef}
-            style={[styles.input, { color: theme.text, borderBottomColor: theme.backgroundSelected }]}
+            style={[styles.input, { color: palette.text, borderBottomColor: palette.surfaceHigh }]}
             value={entry}
             onChangeText={(next) => {
               setEntry(next.replace(/\D/g, '').slice(0, MAX_CODE_LENGTH));
@@ -131,7 +131,7 @@ export function ChangeCodeModal({ visible, onClose }: ChangeCodeModalProps) {
             secureTextEntry
             maxLength={MAX_CODE_LENGTH}
             placeholder={'•'.repeat(MIN_CODE_LENGTH)}
-            placeholderTextColor={theme.textSecondary}
+            placeholderTextColor={palette.textSecondary}
             editable={phase !== 'busy'}
             onSubmitEditing={submit}
             returnKeyType="done"
@@ -148,7 +148,7 @@ export function ChangeCodeModal({ visible, onClose }: ChangeCodeModalProps) {
               accessibilityRole="button"
               style={({ pressed }) => [
                 styles.button,
-                { backgroundColor: theme.backgroundSelected },
+                { backgroundColor: palette.surfaceHigh },
                 pressed && styles.pressed,
                 phase === 'busy' && styles.disabled,
               ]}>
@@ -220,7 +220,7 @@ const styles = StyleSheet.create({
     minWidth: 92,
   },
   submit: {
-    backgroundColor: '#6366F1',
+    backgroundColor: '#22C55E',
   },
   submitText: {
     color: '#ffffff',

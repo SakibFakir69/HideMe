@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import {
@@ -21,11 +22,10 @@ import { SearchBar } from '@/components/vault/search-bar';
 import { SelectionBar } from '@/components/vault/selection-bar';
 import { SkeletonGrid } from '@/components/vault/skeleton-grid';
 import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
-import { useTheme } from '@/hooks/use-theme';
 import { useDebouncedValue } from '@/hooks/use-debounced-value';
 import { GRID_GAP, useGridColumns } from '@/hooks/use-grid-columns';
+import { useVaultPalette } from '@/hooks/use-vault-palette';
 import { useVaultImport } from '@/hooks/use-vault-import';
 import { useVaultIndex } from '@/hooks/use-vault-index';
 import { setBrowseList } from '@/lib/vault-browse';
@@ -36,7 +36,7 @@ import type { VaultItem } from '@/lib/vault-store';
 const NUM_COLUMNS = 3;
 
 export default function FolderScreen() {
-  const theme = useTheme();
+  const palette = useVaultPalette();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { index, error, loading, refresh } = useVaultIndex();
   const { busy: importing, state, cancel, dismiss, importAssets } = useVaultImport(async () => {
@@ -147,16 +147,16 @@ export default function FolderScreen() {
 
   if (!loading && !error && !folder) {
     return (
-      <ThemedView style={styles.container}>
+      <View style={[styles.container, { backgroundColor: palette.background }]}>
         <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
           <Header title="Folder" onBack={() => router.back()} />
           <View style={styles.emptyBox}>
-            <ThemedText type="small" themeColor="textSecondary">
+            <ThemedText type="small" style={{ color: palette.textSecondary }}>
               This folder no longer exists.
             </ThemedText>
           </View>
         </SafeAreaView>
-      </ThemedView>
+      </View>
     );
   }
 
@@ -202,8 +202,8 @@ export default function FolderScreen() {
     if (items.length === 0) {
       return (
         <View style={styles.emptyBox}>
-          <Ionicons name="folder-open-outline" size={34} color={theme.textSecondary} />
-          <ThemedText type="small" themeColor="textSecondary" style={styles.emptyText}>
+          <Ionicons name="folder-open-outline" size={34} color={palette.textSecondary} />
+          <ThemedText type="small" style={[styles.emptyText, { color: palette.textSecondary }]}>
             {effectiveQuery ? 'Nothing matches in this folder.' : 'This folder is empty.'}
           </ThemedText>
         </View>
@@ -213,7 +213,15 @@ export default function FolderScreen() {
   };
 
   return (
-    <ThemedView style={styles.container}>
+    <View style={[styles.container, { backgroundColor: palette.background }]}>
+      {/* the light source in the top right corner — the vault's signature */}
+      <LinearGradient
+        colors={[palette.glow, 'transparent']}
+        start={{ x: 1, y: 0 }}
+        end={{ x: 0.1, y: 0.55 }}
+        style={styles.topGlow}
+        pointerEvents="none"
+      />
       <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
         <FlatList
           key={`cols-${NUM_COLUMNS}`}
@@ -276,7 +284,7 @@ export default function FolderScreen() {
         actions={[
           {
             label: 'Rename folder',
-            icon: <Ionicons name="pencil-outline" size={18} color={theme.text} />,
+            icon: <Ionicons name="pencil-outline" size={18} color={palette.text} />,
             onSelect: () => setRenaming(true),
           },
           {
@@ -302,7 +310,7 @@ export default function FolderScreen() {
           await refresh();
         }}
       />
-    </ThemedView>
+    </View>
   );
 }
 
@@ -315,7 +323,7 @@ function Header({
   onBack: () => void;
   onMore?: () => void;
 }) {
-  const theme = useTheme();
+  const palette = useVaultPalette();
   return (
     <View style={styles.headerRow}>
       <Pressable
@@ -324,9 +332,9 @@ function Header({
         accessibilityRole="button"
         accessibilityLabel="Back"
         style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]}>
-        <Ionicons name="chevron-back" size={20} color={theme.text} />
+        <Ionicons name="chevron-back" size={20} color={palette.text} />
       </Pressable>
-      <ThemedText type="smallBold" numberOfLines={1} style={styles.headerTitle}>
+      <ThemedText type="smallBold" numberOfLines={1} style={[styles.headerTitle, { color: palette.text }]}>
         {title}
       </ThemedText>
       {onMore ? (
@@ -336,7 +344,7 @@ function Header({
           accessibilityRole="button"
           accessibilityLabel="Folder actions"
           style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]}>
-          <Ionicons name="ellipsis-horizontal" size={18} color={theme.text} />
+          <Ionicons name="ellipsis-horizontal" size={18} color={palette.text} />
         </Pressable>
       ) : (
         <View style={styles.iconButton} />
@@ -356,7 +364,7 @@ function ActionButton({
   onPress: () => void;
   disabled?: boolean;
 }) {
-  const theme = useTheme();
+  const palette = useVaultPalette();
   return (
     <Pressable
       onPress={onPress}
@@ -364,12 +372,12 @@ function ActionButton({
       accessibilityRole="button"
       style={({ pressed }) => [
         styles.actionButton,
-        { backgroundColor: theme.backgroundElement },
+        { backgroundColor: palette.surface, borderColor: palette.border },
         pressed && styles.pressed,
         disabled && styles.disabled,
       ]}>
-      <Ionicons name={icon} size={15} color={theme.text} />
-      <ThemedText type="small" numberOfLines={1}>
+      <Ionicons name={icon} size={15} color={palette.accentBright} />
+      <ThemedText type="small" style={{ color: palette.text }} numberOfLines={1}>
         {label}
       </ThemedText>
     </Pressable>
@@ -379,6 +387,13 @@ function ActionButton({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  topGlow: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    left: 0,
+    height: 260,
   },
   safeArea: {
     flex: 1,
@@ -434,6 +449,7 @@ const styles = StyleSheet.create({
     minHeight: 40,
     borderRadius: Spacing.three,
     paddingHorizontal: Spacing.two,
+    borderWidth: 1,
   },
   gridRow: {
     gap: GRID_GAP,

@@ -17,6 +17,8 @@ const BLUR_INTENSITY = 0.7;
 export function PrivacyShield() {
   useEffect(() => {
     if (Platform.OS === 'web') return;
+    // Dev-only escape hatch for store screenshots — never set in production.
+    if (__DEV__ && process.env.EXPO_PUBLIC_CAPTURE_MODE === '1') return;
     let unmounted = false;
 
     (async () => {

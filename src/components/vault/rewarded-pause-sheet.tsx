@@ -8,7 +8,7 @@ import { formatCountdown } from '@/components/vault/format';
 import { GradientButton } from '@/components/ui/gradient-button';
 import { AUTO_LOCK_PAUSE_MS } from '@/constants/ads';
 import { Fonts, Palette, Radius, Spacing } from '@/constants/theme';
-import { useTheme } from '@/hooks/use-theme';
+import { useVaultPalette } from '@/hooks/use-vault-palette';
 import { showRewardedAd } from '@/lib/ads';
 import { grantAutoLockPause } from '@/lib/vault-autolock';
 
@@ -27,7 +27,7 @@ interface RewardedPauseSheetProps {
  * turns into a live countdown once the reward lands.
  */
 export function RewardedPauseSheet({ visible, onClose, onGranted }: RewardedPauseSheetProps) {
-  const theme = useTheme();
+  const palette = useVaultPalette();
   const insets = useSafeAreaInsets();
   const [phase, setPhase] = useState<Phase>('intro');
   const [error, setError] = useState<string | null>(null);
@@ -104,11 +104,11 @@ export function RewardedPauseSheet({ visible, onClose, onGranted }: RewardedPaus
           style={[
             styles.sheet,
             {
-              backgroundColor: theme.backgroundElement,
+              backgroundColor: palette.surface,
               paddingBottom: insets.bottom + Spacing.four,
             },
           ]}>
-          <View style={[styles.grabber, { backgroundColor: theme.border }]} />
+          <View style={[styles.grabber, { backgroundColor: palette.border }]} />
 
           <Pressable
             onPress={close}
@@ -117,7 +117,7 @@ export function RewardedPauseSheet({ visible, onClose, onGranted }: RewardedPaus
             accessibilityRole="button"
             accessibilityLabel="Close"
             style={({ pressed }) => [styles.close, pressed && styles.pressed]}>
-            <Ionicons name="close" size={20} color={theme.textSecondary} />
+            <Ionicons name="close" size={20} color={palette.textSecondary} />
           </Pressable>
 
           {phase === 'success' ? (
@@ -125,11 +125,11 @@ export function RewardedPauseSheet({ visible, onClose, onGranted }: RewardedPaus
               <View style={styles.successBadge}>
                 <Ionicons name="checkmark" size={34} color="#FFFFFF" />
               </View>
-              <Text style={[styles.title, { color: theme.text }]}>Pause active</Text>
-              <Text style={[styles.body, { color: theme.textSecondary }]}>
+              <Text style={[styles.title, { color: palette.text }]}>Pause active</Text>
+              <Text style={[styles.body, { color: palette.textSecondary }]}>
                 Timed auto-lock is paused. Your vault stays unlocked for:
               </Text>
-              <Text style={[styles.countdown, { color: theme.text }]}>
+              <Text style={[styles.countdown, { color: palette.text }]}>
                 {formatCountdown(remaining)}
               </Text>
               <GradientButton label="Done" onPress={onClose} style={styles.primary} />
@@ -146,21 +146,21 @@ export function RewardedPauseSheet({ visible, onClose, onGranted }: RewardedPaus
                 </LinearGradient>
               </View>
 
-              <Text style={[styles.title, { color: theme.text }]}>
+              <Text style={[styles.title, { color: palette.text }]}>
                 Pause auto-lock for 1 hour
               </Text>
-              <Text style={[styles.body, { color: theme.textSecondary }]}>
+              <Text style={[styles.body, { color: palette.textSecondary }]}>
                 Watch a short ad and keep your vault unlocked for an hour — even when you switch
                 apps.
               </Text>
 
-              <View style={[styles.note, { backgroundColor: theme.backgroundSelected }]}>
+              <View style={[styles.note, { backgroundColor: palette.surfaceHigh }]}>
                 <Ionicons
                   name="shield-checkmark-outline"
                   size={16}
-                  color={theme.textSecondary}
+                  color={palette.textSecondary}
                 />
-                <Text style={[styles.noteText, { color: theme.textSecondary }]}>
+                <Text style={[styles.noteText, { color: palette.textSecondary }]}>
                   “Immediately” and Lock now always lock, even during a pause.
                 </Text>
               </View>

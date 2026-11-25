@@ -5,13 +5,13 @@ import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-nati
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
 import { GradientButton } from '@/components/ui/gradient-button';
 import { ScreenHeader } from '@/components/ui/screen-header';
 import { SectionTitle } from '@/components/ui/section-title';
 import { RESTORE_DIAL_CODE } from '@/constants/premium';
 import { Fonts, MaxContentWidth, Palette, Radius, Spacing } from '@/constants/theme';
-import { useTheme } from '@/hooks/use-theme';
+import { useVaultPalette } from '@/hooks/use-vault-palette';
+import { usePremium } from '@/lib/premium';
 import {
   getActiveAppIcon,
   isAppIconNative,
@@ -66,13 +66,32 @@ const OPTIONS: DisguiseOption[] = [
 ];
 
 export default function AppIconScreen() {
-  const theme = useTheme();
+  const palette = useVaultPalette();
+  const premium = usePremium();
   const supported = isAppIconNative();
   const [active, setActive] = useState<DisguiseIcon>(() => getActiveAppIcon());
   const [busy, setBusy] = useState<DisguiseIcon | null>(null);
 
+  /** The default calculator disguise stays free; every other look is Premium. */
+  const isLocked = (id: DisguiseIcon) => !premium.active && id !== 'calculator';
+
+  const paywall = () => {
+    Alert.alert(
+      'Premium disguise',
+      'Changing the app icon (and hiding it) is a Premium feature. The calculator disguise stays free.',
+      [
+        { text: 'Maybe later', style: 'cancel' },
+        { text: 'Go Premium', onPress: () => router.push('/vault/premium') },
+      ],
+    );
+  };
+
   const apply = (id: DisguiseIcon) => {
     if (!supported || busy !== null) return;
+    if (isLocked(id)) {
+      paywall();
+      return;
+    }
     setBusy(id);
     const ok = setActiveAppIcon(id);
     setBusy(null);
@@ -85,6 +104,10 @@ export default function AppIconScreen() {
 
   const confirmHide = () => {
     if (!supported || busy !== null) return;
+    if (!premium.active) {
+      paywall();
+      return;
+    }
     Alert.alert(
       'Hide the app icon?',
       'The app disappears from your home screen and app drawer. To bring it back, open the Phone app and dial the code below, then press call.',
@@ -106,7 +129,7 @@ export default function AppIconScreen() {
     : 'Unavailable';
 
   return (
-    <ThemedView style={styles.container}>
+    <View style={[styles.container, { backgroundColor: palette.background }]}>
       <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
         <View style={styles.headerWrap}>
           <ScreenHeader title="App icon" onBack={() => router.back()} />
@@ -116,13 +139,13 @@ export default function AppIconScreen() {
           <View
             style={[
               styles.hero,
-              { backgroundColor: theme.backgroundElement, borderColor: theme.border },
+              { backgroundColor: palette.surface, borderColor: palette.border },
             ]}>
-            <View style={[styles.preview, { backgroundColor: theme.backgroundSelected }]}>
+            <View style={[styles.preview, { backgroundColor: palette.surfaceHigh }]}>
               <Ionicons
                 name={!supported ? 'phone-portrait-outline' : active === 'hidden' ? 'eye-off-outline' : 'apps-outline'}
                 size={34}
-                color={active === 'hidden' && supported ? theme.textSecondary : Palette.primary}
+                color={active === 'hidden' && supported ? palette.textSecondary : Palette.primary}
               />
             </View>
             <View style={styles.flex}>
@@ -146,7 +169,7 @@ export default function AppIconScreen() {
           {!supported && (
             <View style={[styles.notice, { backgroundColor: 'rgba(245,158,11,0.14)' }]}>
               <Ionicons name="warning-outline" size={18} color={Palette.warning} />
-              <ThemedText type="code" style={[styles.noticeText, { color: theme.text }]}>
+              <ThemedText type="code" style={[styles.noticeText, { color: palette.text }]}>
                 Icon switching needs the native module. Build a development client
                 (`npx expo run:android`) — Expo Go cannot change its launcher icon.
               </ThemedText>
@@ -157,6 +180,7 @@ export default function AppIconScreen() {
           <View style={styles.grid}>
             {OPTIONS.map((option) => {
               const selected = active === option.id;
+              const locked = isLocked(option.id);
               return (
                 <Pressable
                   key={option.id}
@@ -164,23 +188,31 @@ export default function AppIconScreen() {
                   disabled={!supported || busy !== null}
                   accessibilityRole="button"
                   accessibilityState={{ selected }}
+                  accessibilityLabel={
+                    locked ? `${option.label} — Premium` : option.label
+                  }
                   style={({ pressed }) => [
                     styles.tile,
                     {
-                      backgroundColor: theme.backgroundElement,
-                      borderColor: selected ? option.color : theme.border,
+                      backgroundColor: palette.surface,
+                      borderColor: selected ? option.color : palette.border,
                     },
                     pressed && styles.pressed,
                     (!supported || busy !== null) && styles.disabled,
                   ]}>
                   <View style={[styles.tileIcon, { backgroundColor: option.color }]}>
                     <Ionicons name={option.icon} size={26} color="#FFFFFF" />
+                    {locked && (
+                      <View style={styles.lockBadge}>
+                        <Ionicons name="lock-closed" size={10} color="#FFFFFF" />
+                      </View>
+                    )}
                   </View>
                   <ThemedText type="smallBold" style={styles.tileLabel}>
                     {option.label}
                   </ThemedText>
                   <ThemedText type="code" themeColor="textSecondary" style={styles.tileCaption}>
-                    {option.caption}
+                    {locked ? 'Premium' : option.caption}
                   </ThemedText>
                   {selected && (
                     <View style={[styles.check, { backgroundColor: option.color }]}>
@@ -193,7 +225,7 @@ export default function AppIconScreen() {
           </View>
 
           <SectionTitle label="Hiding" />
-          <View style={[styles.card, { backgroundColor: theme.backgroundElement }]}>
+          <View style={[styles.card, { backgroundColor: palette.surface }]}>
             <View style={styles.cardRow}>
               <View style={[styles.cardIcon, { backgroundColor: 'rgba(239,68,68,0.14)' }]}>
                 <Ionicons name="eye-off-outline" size={20} color={Palette.error} />
@@ -225,13 +257,13 @@ export default function AppIconScreen() {
           <View
             style={[
               styles.dialCard,
-              { backgroundColor: theme.backgroundElement, borderColor: theme.border },
+              { backgroundColor: palette.surface, borderColor: palette.border },
             ]}>
             <View style={styles.dialHeader}>
-              <Ionicons name="keypad-outline" size={18} color={theme.tint} />
+              <Ionicons name="keypad-outline" size={18} color={palette.accent} />
               <ThemedText type="smallBold">Restore code</ThemedText>
             </View>
-            <Text style={[styles.dialCode, { color: theme.text }]} selectable>
+            <Text style={[styles.dialCode, { color: palette.text }]} selectable>
               {RESTORE_DIAL_CODE}
             </Text>
             <ThemedText type="code" themeColor="textSecondary" style={styles.dialNote}>
@@ -242,7 +274,7 @@ export default function AppIconScreen() {
           </View>
         </ScrollView>
       </SafeAreaView>
-    </ThemedView>
+    </View>
   );
 }
 
@@ -323,6 +355,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: Spacing.one,
+  },
+  lockBadge: {
+    position: 'absolute',
+    right: -6,
+    bottom: -6,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: '#22C55E',
+    borderWidth: 2,
+    borderColor: '#0A1220',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   tileLabel: {
     fontSize: 13,

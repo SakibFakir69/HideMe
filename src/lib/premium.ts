@@ -85,6 +85,17 @@ export function loadPremium(): Promise<void> {
   if (loading) return loading;
   loading = (async () => {
     try {
+      // A dedicated env flag grants the entitlement locally so gated flows can
+      // be verified without Play billing, which is unavailable in debug builds.
+      // It is separate from EXPO_PUBLIC_CAPTURE_MODE (screenshots) so the free
+      // tier can be inspected with screenshots enabled. Never persisted:
+      // production bundles never set this env var.
+      if (process.env.EXPO_PUBLIC_PREMIUM_GRANT === '1') {
+        state = { active: true, productId: PREMIUM_PRODUCT_ID, purchasedAt: null, source: null };
+        loaded = true;
+        emit();
+        return;
+      }
       if (!(await SecureStore.isAvailableAsync())) return;
       state = parse(await SecureStore.getItemAsync(STORAGE_KEY));
     } catch {

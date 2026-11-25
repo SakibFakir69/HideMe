@@ -3,13 +3,12 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <path
-        android:fillColor="#2563EB"
-        android:pathData="M0,0h108v108H0z" />
+    <!-- Sun -->
     <path
         android:fillColor="#FDE68A"
-        android:pathData="M70,34m-9,0a9,9 0 1,0 18,0a9,9 0 1,0 -18,0" />
+        android:pathData="M69,34m-9,0a9,9 0 1,0 18,0a9,9 0 1,0 -18,0" />
+    <!-- Mountains -->
     <path
         android:fillColor="#FFFFFF"
-        android:pathData="M18,84L44,48l16,22 10,-14 20,28z" />
+        android:pathData="M24,82L44,52Q46,48 49,52L59,68L65,60Q67,57 70,60L84,82Z" />
 </vector>

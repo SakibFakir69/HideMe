@@ -13,6 +13,7 @@ import {
 import { deriveKey } from './crypto/pbkdf2';
 
 const STORAGE_KEY = 'vault.secret.v1';
+const DECOY_STORAGE_KEY = 'vault.secret.decoy.v1';
 const BIOMETRIC_KEY = 'vault.mk.biometric';
 const ALGO = 'pbkdf2-sha256';
 // 210k: OWASP's 2023+ documented minimum for PBKDF2-SHA256. Android runs this
@@ -104,17 +105,27 @@ function unwrapMasterKey(mk: { ct: string }, kek: Uint8Array): Uint8Array {
 }
 
 let cachedRecord: SecretRecord | null = null;
+const cachedByStore = new Map<string, SecretRecord>();
 
 async function loadRecord(): Promise<SecretRecord | null> {
   if (cachedRecord !== null) return cachedRecord;
+  return loadRecordFrom(STORAGE_KEY, cachedByStore);
+}
+
+async function loadRecordFrom(
+  storageKey: string,
+  cache: Map<string, SecretRecord> | null,
+): Promise<SecretRecord | null> {
+  const cached = cache?.get(storageKey) ?? null;
+  if (cached) return cached;
   try {
     if (!(await SecureStore.isAvailableAsync())) return null;
-    const raw = await SecureStore.getItemAsync(STORAGE_KEY);
+    const raw = await SecureStore.getItemAsync(storageKey);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as SecretRecord;
     if (parsed.algo !== ALGO || !parsed.salt || !parsed.hash) return null;
-    cachedRecord = parsed;
-    return cachedRecord;
+    cache?.set(storageKey, parsed);
+    return parsed;
   } catch {
     return null;
   }
@@ -194,6 +205,48 @@ export async function unlockWithSecretCode(candidate: string): Promise<Uint8Arra
 }
 
 /**
+ * Derives the master key an arbitrary record describes (used by backup
+ * restore: the header carries the secret record from when the backup was
+ * made, which may use a different code than the current one).
+ */
+export async function masterKeyForRecord(
+  record: SecretRecord,
+  code: string,
+): Promise<Uint8Array> {
+  if (record.algo !== ALGO || !record.mk) {
+    throw new Error('Backup secret record is not supported.');
+  }
+  if (code.length !== record.len || !DIGITS_RE.test(code)) {
+    throw new Error('Wrong code for this backup.');
+  }
+  const { hash, kek } = splitDerived(await derive(code, fromHex(record.salt), record.c));
+  if (!constantTimeEqual(hash, fromHex(record.hash))) {
+    kek.fill(0);
+    throw new Error('Wrong code for this backup.');
+  }
+  const masterKey = unwrapMasterKey(record.mk, kek);
+  kek.fill(0);
+  return masterKey;
+}
+
+/** The current real secret record (backup export embeds it in the header). */
+export async function currentSecretRecord(): Promise<SecretRecord | null> {
+  return loadRecord();
+}
+
+/**
+ * Replaces the real secret record with one from a backup header. The biometric
+ * slot holds the OLD master key, so it is cleared — the user re-enables it
+ * against the restored key.
+ */
+export async function adoptSecretRecord(record: SecretRecord): Promise<void> {
+  await SecureStore.setItemAsync(STORAGE_KEY, JSON.stringify(record));
+  cachedRecord = record;
+  cachedByStore.set(STORAGE_KEY, record);
+  await SecureStore.deleteItemAsync(BIOMETRIC_KEY);
+}
+
+/**
  * Changes the secret code by re-wrapping the existing master key under the
  * new code — encrypted files are untouched and stay readable.
  */
@@ -237,6 +290,101 @@ export async function changeSecretCode(oldCode: string, newCode: string): Promis
     hash: toHex(next.hash),
     mk: wrapped,
   });
+}
+
+/* ------------------------------------------------------------------ */
+/* decoy code                                                          */
+/* ------------------------------------------------------------------ */
+
+const decoyCache = new Map<string, SecretRecord>();
+
+export async function hasDecoySecret(): Promise<boolean> {
+  return (await loadRecordFrom(DECOY_STORAGE_KEY, decoyCache)) !== null;
+}
+
+/**
+ * Creates the decoy record with its OWN master key, so the decoy vault is a
+ * separate encrypted space. Requires the real code (a thief with the phone
+ * must not be able to plant a decoy) and a decoy code different from it.
+ */
+export async function setupDecoySecret(decoyCode: string, realCode: string): Promise<void> {
+  if (!isValidCode(decoyCode)) {
+    throw new Error(
+      `Code must be ${MIN_CODE_LENGTH}-${MAX_CODE_LENGTH} digits with no other characters.`,
+    );
+  }
+  if (!(await SecureStore.isAvailableAsync())) {
+    throw new Error('Secure storage is not available on this platform.');
+  }
+  if (await hasDecoySecret()) {
+    throw new Error('A decoy code is already set.');
+  }
+  const record = await loadRecord();
+  if (!record) throw new Error('No secret code is set.');
+
+  // Verify the real code, then prove the decoy differs from it: derive the
+  // decoy code with the real record's parameters and compare verify hashes.
+  // Two independent derivations run concurrently (≈ one wall-clock pass).
+  const [realDerived, decoyOnRealSalt] = await Promise.all([
+    derive(realCode, fromHex(record.salt), record.c),
+    derive(decoyCode, fromHex(record.salt), record.c),
+  ]);
+  const real = splitDerived(realDerived);
+  if (!constantTimeEqual(real.hash, fromHex(record.hash))) {
+    real.kek.fill(0);
+    throw new Error('Current code is incorrect.');
+  }
+  const sameAsReal = constantTimeEqual(decoyOnRealSalt.subarray(0, 32), real.hash);
+  real.kek.fill(0);
+  if (sameAsReal) {
+    throw new Error('The decoy code must be different from your real code.');
+  }
+
+  // Same construction as the real secret: decoy code → decoy KEK → decoy mk.
+  const salt = Crypto.getRandomBytes(SALT_BYTES);
+  const decoyDerived = await derive(decoyCode, salt, ITERATIONS);
+  const { hash, kek } = splitDerived(decoyDerived);
+  const masterKey = Crypto.getRandomBytes(MASTER_KEY_BYTES);
+  const wrapped = wrapMasterKey(kek, masterKey);
+  const decoyRecord: SecretRecord = {
+    v: 2,
+    algo: ALGO,
+    c: ITERATIONS,
+    len: decoyCode.length,
+    salt: toHex(salt),
+    hash: toHex(hash),
+    mk: wrapped,
+  };
+  await SecureStore.setItemAsync(DECOY_STORAGE_KEY, JSON.stringify(decoyRecord));
+  decoyCache.set(DECOY_STORAGE_KEY, decoyRecord);
+}
+
+export async function removeDecoySecret(): Promise<void> {
+  if (!(await SecureStore.isAvailableAsync())) return;
+  await SecureStore.deleteItemAsync(DECOY_STORAGE_KEY);
+  decoyCache.delete(DECOY_STORAGE_KEY);
+}
+
+/**
+ * Verifies a candidate against the DECOY record and returns the decoy master
+ * key. Returns null when no decoy is set or the code does not match.
+ */
+export async function unlockWithDecoyCode(candidate: string): Promise<Uint8Array | null> {
+  try {
+    const record = await loadRecordFrom(DECOY_STORAGE_KEY, decoyCache);
+    if (!record || !record.mk) return null;
+    if (candidate.length !== record.len || !DIGITS_RE.test(candidate)) return null;
+    const { hash, kek } = splitDerived(await derive(candidate, fromHex(record.salt), record.c));
+    if (!constantTimeEqual(hash, fromHex(record.hash))) {
+      kek.fill(0);
+      return null;
+    }
+    const masterKey = unwrapMasterKey(record.mk, kek);
+    kek.fill(0);
+    return masterKey;
+  } catch {
+    return null;
+  }
 }
 
 /* ------------------------------------------------------------------ */

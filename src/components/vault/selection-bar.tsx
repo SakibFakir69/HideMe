@@ -3,7 +3,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { Fonts, Spacing } from '@/constants/theme';
-import { useTheme } from '@/hooks/use-theme';
+import { useVaultPalette } from '@/hooks/use-vault-palette';
 
 interface SelectionBarProps {
   count: number;
@@ -27,16 +27,16 @@ export function SelectionBar({
   onShare,
   onDelete,
 }: SelectionBarProps) {
-  const theme = useTheme();
+  const palette = useVaultPalette();
   return (
-    <View style={[styles.bar, { backgroundColor: theme.backgroundElement }]}>
+    <View style={[styles.bar, { backgroundColor: palette.surface }]}>
       <Pressable
         onPress={onCancel}
         hitSlop={Spacing.two}
         accessibilityRole="button"
         accessibilityLabel="Cancel selection"
         style={({ pressed }) => [styles.iconBtn, pressed && styles.pressed]}>
-        <Ionicons name="close" size={18} color={theme.text} />
+        <Ionicons name="close" size={18} color={palette.text} />
       </Pressable>
       <ThemedText type="smallBold" numberOfLines={1}>
         {count} selected
@@ -62,7 +62,7 @@ export function SelectionBar({
           accessibilityRole="button"
           accessibilityLabel={`Move ${count} selected`}
           style={({ pressed }) => [styles.action, pressed && styles.pressed]}>
-          <Ionicons name="folder-outline" size={16} color={theme.text} />
+          <Ionicons name="folder-outline" size={16} color={palette.text} />
           <ThemedText type="small">Move</ThemedText>
         </Pressable>
       )}
@@ -72,7 +72,7 @@ export function SelectionBar({
           accessibilityRole="button"
           accessibilityLabel={`Share ${count} selected`}
           style={({ pressed }) => [styles.action, pressed && styles.pressed]}>
-          <Ionicons name="share-outline" size={16} color={theme.text} />
+          <Ionicons name="share-outline" size={16} color={palette.text} />
           <ThemedText type="small">Share</ThemedText>
         </Pressable>
       )}

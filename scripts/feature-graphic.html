@@ -1,0 +1,129 @@
+<!doctype html>
+<!--
+  Source of assets/images/feature-graphic.png (Google Play, 1024 x 500).
+
+  Render it in a Chromium viewport of exactly 1024 x 500 and save the
+  screenshot as assets/images/feature-graphic.png:
+
+    npx playwright screenshot --viewport-size=1024,500 \
+      scripts/feature-graphic.html assets/images/feature-graphic.png
+
+  No build step, no extra dependency — the fonts and the icon are the ones
+  the app already ships.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>HideMe feature graphic</title>
+    <style>
+      @font-face {
+        font-family: 'Inter';
+        src: url('../node_modules/@expo-google-fonts/inter/Inter_400Regular.ttf') format('truetype');
+        font-weight: 400;
+      }
+      @font-face {
+        font-family: 'Inter';
+        src: url('../node_modules/@expo-google-fonts/inter/Inter_500Medium.ttf') format('truetype');
+        font-weight: 500;
+      }
+      @font-face {
+        font-family: 'Inter';
+        src: url('../node_modules/@expo-google-fonts/inter/Inter_600SemiBold.ttf') format('truetype');
+        font-weight: 600;
+      }
+      @font-face {
+        font-family: 'Inter';
+        src: url('../node_modules/@expo-google-fonts/inter/Inter_700Bold.ttf') format('truetype');
+        font-weight: 700;
+      }
+
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        width: 1024px;
+        height: 500px;
+        overflow: hidden;
+      }
+
+      .stage {
+        width: 1024px;
+        height: 500px;
+        display: flex;
+        align-items: center;
+        gap: 54px;
+        padding: 0 64px;
+        background:
+          radial-gradient(620px 420px at 88% -10%, rgba(139, 92, 246, 0.42), transparent 70%),
+          radial-gradient(520px 380px at 4% 110%, rgba(99, 102, 241, 0.34), transparent 70%),
+          linear-gradient(135deg, #0b1120 0%, #131a2e 55%, #0e1526 100%);
+        font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+      }
+
+      .icon {
+        width: 236px;
+        height: 236px;
+        border-radius: 54px;
+        box-shadow:
+          0 28px 60px rgba(0, 0, 0, 0.5),
+          0 0 0 1px rgba(255, 255, 255, 0.08);
+      }
+
+      .copy {
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+      }
+
+      .wordmark {
+        font-size: 84px;
+        font-weight: 700;
+        line-height: 1;
+        letter-spacing: -2.5px;
+        color: #ffffff;
+      }
+
+      .tagline {
+        font-size: 27px;
+        font-weight: 500;
+        line-height: 1.3;
+        color: #b9c6dc;
+      }
+
+      .pills {
+        display: flex;
+        gap: 10px;
+        margin-top: 6px;
+      }
+
+      .pill {
+        font-size: 16px;
+        font-weight: 500;
+        color: #dce6f7;
+        background: rgba(255, 255, 255, 0.07);
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        border-radius: 999px;
+        padding: 8px 16px;
+        white-space: nowrap;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="stage" role="img" aria-label="HideMe feature graphic">
+      <img class="icon" src="../assets/images/icon.png" alt="" />
+      <div class="copy">
+        <div class="wordmark">HideMe</div>
+        <div class="tagline">A calculator that hides your real vault</div>
+        <div class="pills">
+          <span class="pill">Encrypted on device</span>
+          <span class="pill">No account</span>
+          <span class="pill">Works offline</span>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

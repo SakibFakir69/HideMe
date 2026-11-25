@@ -4,7 +4,7 @@ import { ActivityIndicator, Modal, Pressable, StyleSheet, View } from 'react-nat
 import { ThemedText } from '@/components/themed-text';
 import { GradientButton } from '@/components/ui/gradient-button';
 import { Fonts, Radius, Spacing } from '@/constants/theme';
-import { useTheme } from '@/hooks/use-theme';
+import { useVaultPalette } from '@/hooks/use-vault-palette';
 import type { ImportJobState } from '@/hooks/use-vault-import';
 
 interface ImportProgressModalProps {
@@ -24,7 +24,7 @@ interface ImportProgressModalProps {
  * report what ended up in the vault before the user closes it.
  */
 export function ImportProgressModal({ state, onCancel, onDismiss }: ImportProgressModalProps) {
-  const theme = useTheme();
+  const palette = useVaultPalette();
   const visible = state !== null;
   if (!state) return null;
 
@@ -77,10 +77,10 @@ export function ImportProgressModal({ state, onCancel, onDismiss }: ImportProgre
       // still in flight. Afterwards the back button closes it.
       onRequestClose={running ? () => {} : onDismiss}>
       <View style={styles.backdrop}>
-        <View style={[styles.card, { backgroundColor: theme.backgroundElement }]}>
+        <View style={[styles.card, { backgroundColor: palette.surface }]}>
           <View style={styles.headerRow}>
             <ThemedText type="smallBold">{title}</ThemedText>
-            {cancelling && <ActivityIndicator size="small" color={theme.tint} />}
+            {cancelling && <ActivityIndicator size="small" color={palette.accent} />}
           </View>
 
           <ThemedText type="small" themeColor="textSecondary">
@@ -89,7 +89,7 @@ export function ImportProgressModal({ state, onCancel, onDismiss }: ImportProgre
 
           {running && (
             <>
-              <View style={[styles.track, { backgroundColor: theme.backgroundSelected }]}>
+              <View style={[styles.track, { backgroundColor: palette.surfaceHigh }]}>
                 <View style={[styles.fill, { width: `${Math.max(2, percent)}%` }]} />
               </View>
               <View style={styles.metaRow}>
@@ -119,14 +119,14 @@ export function ImportProgressModal({ state, onCancel, onDismiss }: ImportProgre
               accessibilityLabel="Cancel import"
               style={({ pressed }) => [
                 styles.cancelButton,
-                { borderColor: theme.border },
+                { borderColor: palette.border },
                 pressed && styles.pressed,
                 cancelling && styles.disabled,
               ]}>
               <Ionicons
                 name="close-circle-outline"
                 size={16}
-                color={cancelling ? theme.textSecondary : theme.text}
+                color={cancelling ? palette.textSecondary : palette.text}
               />
               <ThemedText type="small" style={styles.cancelLabel}>
                 {cancelling ? 'Cancelling…' : 'Cancel'}
@@ -171,7 +171,7 @@ const styles = StyleSheet.create({
   fill: {
     height: '100%',
     borderRadius: 4,
-    backgroundColor: '#6366F1',
+    backgroundColor: '#22C55E',
   },
   metaRow: {
     flexDirection: 'row',

@@ -49,7 +49,7 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.sansMedium,
     lineHeight: 30,
     fontSize: 14,
-    color: '#6366F1',
+    color: '#22C55E',
   },
   code: {
     fontFamily: Fonts.mono,

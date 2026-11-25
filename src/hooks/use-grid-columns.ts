@@ -2,8 +2,8 @@ import { useWindowDimensions } from 'react-native';
 
 import { MaxContentWidth, Spacing } from '@/constants/theme';
 
-/** Gap between grid tiles. */
-export const GRID_GAP = Spacing.two;
+/** Gap between grid tiles — wide enough that the photos breathe. */
+export const GRID_GAP = 12;
 
 /**
  * Tile width for a fixed-column grid.

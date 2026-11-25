@@ -166,6 +166,7 @@ so the stored record alone cannot be brute-forced cheaply and never contains the
 
 | Area | Details |
 |---|---|
+| Design system | The vault screens have their own palette (`constants/vault-theme.ts`): deep navy surfaces, one emerald accent, a light source in the top-right corner. Every screen picks an accent — home and settings are emerald, the gallery violet, the files blue — and the tab bar follows the focused tab. The app theme follows the system but **defaults to dark**; the light palette keeps the same layout |
 | Disguise gate | Real calculator (expression + result, shrink-to-fit), anonymous dark UI |
 | Setup | 6–12 digit code, confirm step, unrecoverable-code warning, biometric opt-in |
 | PIN unlock | PBKDF2 210k → AES-256-GCM master-key wrap, constant-time verify; native derivation on Android 8+ and iOS, and the Android module derives it itself on Android 7 and older (the JS fallback took minutes); the gate shows "= Working" with a spinner while the key is derived |
@@ -287,6 +288,14 @@ npx expo export -p web         # static web export (ads/crypto limited on web)
 ```
 
 Ads and biometrics require a **development build** — Expo Go will not run the full unlock flow.
+
+Three environment variables change what a build does:
+
+| Variable | Effect |
+|---|---|
+| `EXPO_PUBLIC_DEV_ENTRY=onboarding` (or `setup-secret`, `calculator-disguise`) | The app opens on that screen instead of the calculator gate — the first-run flow is otherwise unreachable once the app is set up (`src/lib/dev-entry.ts`) |
+| `EXPO_PUBLIC_CAPTURE_MODE=1` | Lifts the screenshot block (`FLAG_SECURE`) so the vault screens can be captured for the store listing. Never set it for a shipped build |
+| `EXPO_PUBLIC_PREMIUM_GRANT=1` | Grants premium in memory for the session (Play billing is unavailable in debug builds), so gated flows can be exercised — while the free-tier paywall stays inspectable. Never persisted, never shipped |
 
 ---
 

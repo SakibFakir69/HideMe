@@ -8,15 +8,16 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import type { Product } from 'expo-iap';
 
 import { ThemedText } from '@/components/themed-text';
-import { AdBanner } from '@/components/vault/ad-banner';
 import { GradientButton } from '@/components/ui/gradient-button';
 import { ScreenHeader } from '@/components/ui/screen-header';
-import { Palette, Radius, Spacing, Fonts, MaxContentWidth } from '@/constants/theme';
+import { Radius, Spacing, Fonts, MaxContentWidth, Palette } from '@/constants/theme';
+import { VAULT_ACCENTS, VAULT_TONES } from '@/constants/vault-theme';
 import {
   PREMIUM_FALLBACK_PRICE,
+  PREMIUM_ORIGINAL_PRICE,
   PREMIUM_PRODUCT_ID,
 } from '@/constants/premium';
-import { useTheme } from '@/hooks/use-theme';
+import { useVaultPalette } from '@/hooks/use-vault-palette';
 import {
   addPurchaseListeners,
   fetchPremiumProduct,
@@ -24,30 +25,57 @@ import {
   restorePremium,
 } from '@/lib/iap';
 import { usePremium } from '@/lib/premium';
+import { priceAmount } from '@/lib/price-amount';
 
 const BENEFITS = [
-  { icon: 'ban-outline', title: 'Remove all ads', body: 'No banners or interstitials, anywhere.' },
   {
-    icon: 'albums-outline',
+    icon: 'ban-outline' as const,
+    tone: VAULT_TONES.amber,
+    title: 'Remove all ads',
+    body: 'No banners or interstitials, anywhere.',
+  },
+  {
+    icon: 'albums-outline' as const,
+    tone: VAULT_TONES.violet,
     title: 'Unlimited vault organization',
     body: 'Keep as many files and folders as your device allows.',
   },
   {
-    icon: 'shield-checkmark-outline',
+    icon: 'shield-checkmark-outline' as const,
+    tone: VAULT_TONES.green,
     title: 'Advanced security',
     body: 'The strongest unlock path and every future security upgrade.',
   },
   {
-    icon: 'headset-outline',
+    icon: 'camera-reverse-outline' as const,
+    tone: VAULT_TONES.amber,
+    title: 'Intruder selfies',
+    body: 'A wrong code silently photographs the snoop — encrypted, only you see it.',
+  },
+  {
+    icon: 'swap-horizontal-outline' as const,
+    tone: VAULT_TONES.violet,
+    title: 'Decoy code',
+    body: 'A second code opens an empty fake vault. Your real one stays invisible.',
+  },
+  {
+    icon: 'cloud-upload-outline' as const,
+    tone: VAULT_TONES.blue,
+    title: 'Encrypted backups',
+    body: 'Export the whole vault to one .hmb file you can store anywhere.',
+  },
+  {
+    icon: 'headset-outline' as const,
+    tone: VAULT_TONES.blue,
     title: 'Priority support',
     body: 'Get help first when something goes wrong.',
   },
-] as const;
+];
 
 type StoreStatus = 'connecting' | 'ready' | 'unavailable';
 
 export default function PremiumScreen() {
-  const theme = useTheme();
+  const palette = useVaultPalette();
   const premium = usePremium();
   const [product, setProduct] = useState<Product | null>(null);
   const [status, setStatus] = useState<StoreStatus>('connecting');
@@ -83,6 +111,14 @@ export default function PremiumScreen() {
 
   const price = product?.displayPrice ?? PREMIUM_FALLBACK_PRICE;
 
+  // Discount badge only when the two prices are actually comparable numbers.
+  const originalNum = priceAmount(PREMIUM_ORIGINAL_PRICE);
+  const priceNum = priceAmount(price);
+  const percentOff =
+    originalNum > 0 && priceNum > 0 && priceNum < originalNum
+      ? Math.round((1 - priceNum / originalNum) * 100)
+      : null;
+
   const onBuy = async () => {
     if (busy || premium.active) return;
     setBusy(true);
@@ -113,123 +149,176 @@ export default function PremiumScreen() {
   };
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]} edges={['top', 'bottom']}>
-      <View style={styles.headerWrap}>
-        <ScreenHeader title="Premium" onBack={() => router.back()} />
-      </View>
+    <View style={[styles.container, { backgroundColor: palette.background }]}>
+      {/* the light source in the top right corner — the vault's signature */}
+      <LinearGradient
+        colors={[palette.glow, 'transparent']}
+        start={{ x: 1, y: 0 }}
+        end={{ x: 0.1, y: 0.55 }}
+        style={styles.topGlow}
+        pointerEvents="none"
+      />
 
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <LinearGradient
-          colors={['#6366F1', '#8B5CF6']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.hero}>
-          <View style={styles.crown}>
-            <Ionicons name="ribbon" size={34} color="#FFFFFF" />
-          </View>
-          <Text style={styles.heroTitle}>{premium.active ? 'Premium is active' : 'Go Premium'}</Text>
-          <Text style={styles.heroBody}>
-            {premium.active
-              ? 'Thank you for supporting HideMe. Everything below is unlocked.'
-              : 'One payment. No subscription. Yours for life.'}
-          </Text>
-        </LinearGradient>
-
-        {premium.active && (
-          <View style={[styles.activeCard, { backgroundColor: theme.backgroundElement }]}>
-            <Ionicons name="checkmark-circle" size={22} color={Palette.success} />
-            <View style={styles.flex}>
-              <ThemedText type="smallBold">Lifetime license</ThemedText>
-              <ThemedText type="code" themeColor="textSecondary">
-                {premium.productId ?? PREMIUM_PRODUCT_ID}
-              </ThemedText>
-            </View>
-          </View>
-        )}
-
-        <View style={[styles.benefits, { backgroundColor: theme.backgroundElement }]}>
-          {BENEFITS.map((benefit, index) => (
-            <View
-              key={benefit.title}
-              style={[
-                styles.benefitRow,
-                index < BENEFITS.length - 1 && {
-                  borderBottomWidth: StyleSheet.hairlineWidth,
-                  borderBottomColor: theme.border,
-                },
-              ]}>
-              <View style={[styles.benefitIcon, { backgroundColor: theme.backgroundSelected }]}>
-                <Ionicons name={benefit.icon} size={18} color={Palette.primary} />
-              </View>
-              <View style={styles.flex}>
-                <ThemedText type="smallBold">{benefit.title}</ThemedText>
-                <ThemedText type="code" themeColor="textSecondary" style={styles.benefitBody}>
-                  {benefit.body}
-                </ThemedText>
-              </View>
-            </View>
-          ))}
+      <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
+        <View style={styles.headerWrap}>
+          <ScreenHeader title="Premium" onBack={() => router.back()} />
         </View>
 
-        {!premium.active && (
-          <View style={[styles.priceCard, { backgroundColor: theme.backgroundElement }]}>
-            <View style={styles.priceRow}>
-              <ThemedText type="subtitle" style={styles.price}>
-                {price}
-              </ThemedText>
-              <View style={styles.priceMeta}>
-                <ThemedText type="smallBold">Lifetime</ThemedText>
-                <ThemedText type="code" themeColor="textSecondary">
-                  one-time payment
+        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+          <LinearGradient
+            colors={VAULT_ACCENTS.emerald.gradient}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.hero}>
+            <Ionicons
+              name="diamond"
+              size={96}
+              color="rgba(255,255,255,0.14)"
+              style={styles.heroWatermark}
+            />
+            <View style={styles.crown}>
+              <Ionicons name="diamond" size={30} color="#FFFFFF" />
+            </View>
+            <Text style={styles.heroTitle}>{premium.active ? 'Premium is active' : 'Go Premium'}</Text>
+            <Text style={styles.heroBody}>
+              {premium.active
+                ? 'Thank you for supporting HideMe. Everything below is unlocked.'
+                : `Today only: ${price} instead of ${PREMIUM_ORIGINAL_PRICE}. One payment, yours for life.`}
+            </Text>
+          </LinearGradient>
+
+          {premium.active && (
+            <View style={[styles.activeCard, { backgroundColor: palette.surface, borderColor: palette.border }]}>
+              <Ionicons name="checkmark-circle" size={22} color={palette.accent} />
+              <View style={styles.flex}>
+                <ThemedText type="smallBold" style={{ color: palette.text }}>
+                  Lifetime license
+                </ThemedText>
+                <ThemedText type="code" style={{ color: palette.textSecondary }}>
+                  {premium.productId ?? PREMIUM_PRODUCT_ID}
                 </ThemedText>
               </View>
             </View>
+          )}
 
-            {status === 'connecting' ? (
-              <View style={styles.loadingRow}>
-                <ActivityIndicator size="small" color={theme.tint} />
-                <ThemedText type="small" themeColor="textSecondary">
-                  Checking the store…
-                </ThemedText>
+          <View style={[styles.benefits, { backgroundColor: palette.surface, borderColor: palette.border }]}>
+            {BENEFITS.map((benefit, index) => (
+              <View
+                key={benefit.title}
+                style={[
+                  styles.benefitRow,
+                  index < BENEFITS.length - 1 && {
+                    borderBottomWidth: StyleSheet.hairlineWidth,
+                    borderBottomColor: palette.border,
+                  },
+                ]}>
+                <View style={[styles.benefitIcon, { backgroundColor: benefit.tone.wash }]}>
+                  <Ionicons name={benefit.icon} size={18} color={benefit.tone.color} />
+                </View>
+                <View style={styles.flex}>
+                  <ThemedText type="smallBold" style={{ color: palette.text }}>
+                    {benefit.title}
+                  </ThemedText>
+                  <ThemedText type="code" style={[styles.benefitBody, { color: palette.textSecondary }]}>
+                    {benefit.body}
+                  </ThemedText>
+                </View>
               </View>
-            ) : null}
-
-            <GradientButton
-              label={premium.active ? 'Premium active' : `Get Premium · ${price}`}
-              onPress={() => void onBuy()}
-              loading={busy}
-              disabled={premium.active || status === 'unavailable'}
-            />
-
-            {status === 'unavailable' && (
-              <ThemedText type="code" themeColor="textSecondary" style={styles.storeNote}>
-                The store did not return the premium product. Create “{PREMIUM_PRODUCT_ID}” as an
-                in-app product in Play Console, then relaunch the app.
-              </ThemedText>
-            )}
-
-            <GradientButton
-              label="Restore purchase"
-              variant="ghost"
-              onPress={() => void onRestore()}
-              disabled={busy}
-            />
-
-            <ThemedText type="code" themeColor="textSecondary" style={styles.legal}>
-              Payment is handled by your app store. The lifetime license follows your store
-              account and can be restored on a new device.
-            </ThemedText>
+            ))}
           </View>
-        )}
 
-        <AdBanner />
-      </ScrollView>
-    </SafeAreaView>
+          {!premium.active && (
+            <View style={[styles.priceCard, { backgroundColor: palette.surface, borderColor: palette.border }]}>
+              <View style={styles.priceRow}>
+                <View style={styles.priceStack}>
+                  {/* anchor price, struck through */}
+                  <Text style={[styles.oldPrice, { color: palette.textSecondary }]}>
+                    {PREMIUM_ORIGINAL_PRICE}
+                  </Text>
+                  <View style={styles.priceLine}>
+                    <ThemedText type="subtitle" style={[styles.price, { color: palette.text }]}>
+                      {price}
+                    </ThemedText>
+                    <ThemedText type="smallBold" style={{ color: palette.accent }}>
+                      today
+                    </ThemedText>
+                  </View>
+                  {percentOff !== null && (
+                    <View style={styles.todayBadge}>
+                      <Ionicons name="flash" size={12} color={Palette.error} />
+                      <Text style={styles.todayBadgeText}>
+                        TODAY ONLY · {percentOff}% OFF
+                      </Text>
+                    </View>
+                  )}
+                </View>
+                <View style={styles.priceMeta}>
+                  <ThemedText type="smallBold" style={{ color: palette.text }}>
+                    Lifetime
+                  </ThemedText>
+                  <ThemedText type="code" style={{ color: palette.textSecondary }}>
+                    one-time payment
+                  </ThemedText>
+                </View>
+              </View>
+
+              {status === 'connecting' ? (
+                <View style={styles.loadingRow}>
+                  <ActivityIndicator size="small" color={palette.accent} />
+                  <ThemedText type="small" style={{ color: palette.textSecondary }}>
+                    Checking the store…
+                  </ThemedText>
+                </View>
+              ) : null}
+
+              <GradientButton
+                label={premium.active ? 'Premium active' : `Unlock Premium · ${price}`}
+                onPress={() => void onBuy()}
+                loading={busy}
+                disabled={premium.active || status === 'unavailable'}
+              />
+
+              {/* Setup instructions for whoever wires the product up — never
+                  shown to a customer. Testing unlocks premium through
+                  EXPO_PUBLIC_PREMIUM_GRANT=1 instead of this note. */}
+              {__DEV__ && status === 'unavailable' && (
+                <ThemedText type="code" style={[styles.storeNote, { color: palette.textSecondary }]}>
+                  Dev: the store did not return “{PREMIUM_PRODUCT_ID}”. Create it as an in-app
+                  product in Play Console, then relaunch — or set EXPO_PUBLIC_PREMIUM_GRANT=1.
+                </ThemedText>
+              )}
+
+              <GradientButton
+                label="Restore purchase"
+                variant="ghost"
+                onPress={() => void onRestore()}
+                disabled={busy}
+              />
+
+              <ThemedText type="code" style={[styles.legal, { color: palette.textSecondary }]}>
+                Payment is handled by your app store. The lifetime license follows your store
+                account and can be restored on a new device.
+              </ThemedText>
+            </View>
+          )}
+        </ScrollView>
+      </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
+    flex: 1,
+  },
+  topGlow: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    left: 0,
+    height: 260,
+  },
+  safeArea: {
     flex: 1,
   },
   headerWrap: {
@@ -253,6 +342,12 @@ const styles = StyleSheet.create({
     padding: Spacing.four,
     alignItems: 'center',
     gap: Spacing.two,
+    overflow: 'hidden',
+  },
+  heroWatermark: {
+    position: 'absolute',
+    right: -18,
+    bottom: -26,
   },
   crown: {
     width: 64,
@@ -280,10 +375,12 @@ const styles = StyleSheet.create({
     gap: Spacing.three,
     borderRadius: Radius.lg,
     padding: Spacing.three,
+    borderWidth: 1,
   },
   benefits: {
     borderRadius: Radius.lg,
     overflow: 'hidden',
+    borderWidth: 1,
   },
   benefitRow: {
     flexDirection: 'row',
@@ -309,12 +406,45 @@ const styles = StyleSheet.create({
     borderRadius: Radius.lg,
     padding: Spacing.three,
     gap: Spacing.two,
+    borderWidth: 1,
   },
   priceRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.three,
     paddingBottom: Spacing.two,
+  },
+  priceStack: {
+    flex: 1,
+    gap: Spacing.one,
+  },
+  oldPrice: {
+    fontFamily: Fonts.sans,
+    fontSize: 20,
+    lineHeight: 24,
+    textDecorationLine: 'line-through',
+  },
+  priceLine: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: Spacing.one,
+  },
+  todayBadge: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(239,68,68,0.12)',
+    borderRadius: 999,
+    paddingHorizontal: Spacing.two,
+    paddingVertical: 3,
+  },
+  todayBadgeText: {
+    fontFamily: Fonts.sansSemiBold,
+    fontSize: 10.5,
+    lineHeight: 14,
+    letterSpacing: 0.5,
+    color: Palette.error,
   },
   price: {
     fontSize: 36,
@@ -323,6 +453,7 @@ const styles = StyleSheet.create({
   priceMeta: {
     gap: 0,
     paddingTop: 6,
+    alignItems: 'flex-end',
   },
   loadingRow: {
     flexDirection: 'row',

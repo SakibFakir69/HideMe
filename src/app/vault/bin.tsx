@@ -9,9 +9,8 @@ import { confirmDestructive } from '@/components/vault/confirm';
 import { formatBytes } from '@/components/vault/format';
 import { Thumbnail } from '@/components/vault/thumbnail';
 import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
-import { useTheme } from '@/hooks/use-theme';
+import { useVaultPalette } from '@/hooks/use-vault-palette';
 import { useVaultIndex } from '@/hooks/use-vault-index';
 import { daysLeft } from '@/lib/vault-bin-core';
 import { getMasterKey } from '@/lib/vault-session';
@@ -27,7 +26,7 @@ import type { VaultItem } from '@/lib/vault-store';
 const THUMB = 56;
 
 export default function BinScreen() {
-  const theme = useTheme();
+  const palette = useVaultPalette();
   const { index, now } = useVaultIndex();
   const [sheetItem, setSheetItem] = useState<VaultItem | null>(null);
 
@@ -70,7 +69,7 @@ export default function BinScreen() {
   };
 
   return (
-    <ThemedView style={styles.container}>
+    <View style={[styles.container, { backgroundColor: palette.background }]}>
       <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
         <View style={styles.headerBlock}>
           <View style={styles.toolbarRow}>
@@ -80,7 +79,7 @@ export default function BinScreen() {
               accessibilityRole="button"
               accessibilityLabel="Back"
               style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]}>
-              <Ionicons name="chevron-back" size={20} color={theme.text} />
+              <Ionicons name="chevron-back" size={20} color={palette.text} />
             </Pressable>
             <ThemedText type="smallBold" style={styles.title}>
               Recently deleted
@@ -111,7 +110,7 @@ export default function BinScreen() {
           contentContainerStyle={styles.listContent}
           ListEmptyComponent={
             <View style={styles.emptyBox}>
-              <Ionicons name="trash-outline" size={34} color={theme.textSecondary} />
+              <Ionicons name="trash-outline" size={34} color={palette.textSecondary} />
               <ThemedText type="small" themeColor="textSecondary" style={styles.emptyText}>
                 Bin is empty.
               </ThemedText>
@@ -135,7 +134,7 @@ export default function BinScreen() {
         actions={[
           {
             label: 'Restore to vault',
-            icon: <Ionicons name="arrow-undo-outline" size={18} color={theme.text} />,
+            icon: <Ionicons name="arrow-undo-outline" size={18} color={palette.text} />,
             onSelect: async () => {
               if (sheetItem) await onRestore(sheetItem);
             },
@@ -151,7 +150,7 @@ export default function BinScreen() {
         ]}
         onClose={() => setSheetItem(null)}
       />
-    </ThemedView>
+    </View>
   );
 }
 
@@ -162,7 +161,7 @@ function subtitleFor(deletedAt: number, now: number): string {
 }
 
 function BinRow({ item, now, onPress }: { item: VaultItem; now: number; onPress: () => void }) {
-  const theme = useTheme();
+  const palette = useVaultPalette();
   const left = item.deletedAt !== undefined ? daysLeft(item.deletedAt, now) : 0;
   return (
     <Pressable
@@ -171,7 +170,7 @@ function BinRow({ item, now, onPress }: { item: VaultItem; now: number; onPress:
       accessibilityLabel={`Actions for ${item.name}`}
       style={({ pressed }) => [
         styles.row,
-        { backgroundColor: theme.backgroundElement },
+        { backgroundColor: palette.surface },
         pressed && styles.pressed,
       ]}>
       <Thumbnail item={item} size={THUMB} />
@@ -185,7 +184,7 @@ function BinRow({ item, now, onPress }: { item: VaultItem; now: number; onPress:
           {formatBytes(item.size)}
         </ThemedText>
       </View>
-      <Ionicons name="ellipsis-horizontal" size={18} color={theme.textSecondary} />
+      <Ionicons name="ellipsis-horizontal" size={18} color={palette.textSecondary} />
     </Pressable>
   );
 }

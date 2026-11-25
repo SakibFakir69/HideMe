@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
   Alert,
   Animated,
+  Platform,
   Pressable,
   ScrollView,
   StatusBar,
@@ -16,6 +17,7 @@ import {
   Text,
   View,
   useWindowDimensions,
+  type GestureResponderEvent,
 } from 'react-native';
 import { FlatList } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -26,8 +28,9 @@ import { confirmDestructive } from '@/components/vault/confirm';
 import { formatBytes, formatDate, formatDuration } from '@/components/vault/format';
 import { NamePromptModal } from '@/components/vault/name-prompt-modal';
 import { ZoomableImage, type SwipeDirection } from '@/components/vault/zoomable-image';
-import { Fonts, Palette, Spacing } from '@/constants/theme';
-import { useTheme } from '@/hooks/use-theme';
+import { Fonts, Spacing } from '@/constants/theme';
+import { VAULT_ACCENTS } from '@/constants/vault-theme';
+import { useVaultPalette } from '@/hooks/use-vault-palette';
 import { useVaultIndex } from '@/hooks/use-vault-index';
 import { shareVaultFile } from '@/lib/share';
 import { getBrowseList } from '@/lib/vault-browse';
@@ -53,6 +56,18 @@ const KIND_LABEL: Record<VaultItem['kind'], string> = {
   document: 'Document',
   audio: 'Audio',
 };
+
+/**
+ * Height of the video control bar this screen draws itself, in dp.
+ *
+ * The player's native controls are turned off on purpose: media3's controller
+ * puts its own bottom bar at the very bottom of the player view, and on
+ * edge-to-edge Android that bar (play time, settings, fullscreen) ended up on
+ * top of the navigation buttons. Because this bar is a React view it is
+ * positioned from `insets.bottom` like the rest of the app's chrome, so it
+ * cannot land on the system buttons on any device.
+ */
+const PLAYER_BAR_HEIGHT = 48;
 
 /** "Photo · 2.4 MB · 0:42 · 1080×1920 · 12 Oct 2026" — one line of facts. */
 function describeItem(item: VaultItem): string {
@@ -87,7 +102,7 @@ function documentIcon(mime: string): keyof typeof Ionicons.glyphMap {
 }
 
 export default function ItemScreen() {
-  const theme = useTheme();
+  const palette = useVaultPalette();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -97,6 +112,7 @@ export default function ItemScreen() {
   const [moving, setMoving] = useState(false);
   const [chromeShown, setChromeShown] = useState(true);
   const [videoPlaying, setVideoPlaying] = useState(false);
+  const [videoControlsUp, setVideoControlsUp] = useState(false);
   const listRef = useRef<FlatList<VaultItem> | null>(null);
 
   /**
@@ -148,6 +164,15 @@ export default function ItemScreen() {
 
   // While a video plays the chrome fades out; for photos it is tap-toggled.
   const chromeVisible = item?.kind === 'video' ? !videoPlaying : chromeShown;
+  /**
+   * Space kept free for the in-app player bar (see VideoPlayerView). It is
+   * only on screen while the bar is, so the Share / Delete / More row drops
+   * back down when the controls fade out.
+   */
+  const playerBarReserve =
+    item?.kind === 'video' && videoControlsUp
+      ? PLAYER_BAR_HEIGHT + Spacing.two + insets.bottom
+      : 0;
   const chromeOpacity = useState(() => new Animated.Value(1))[0];
 
   useEffect(() => {
@@ -176,6 +201,9 @@ export default function ItemScreen() {
       if (!nextItem) return;
       setChromeShown(true);
       setVideoPlaying(false);
+      // The page being left may have had the player's controls up; the strip
+      // they needed must be released or the next page's action row floats.
+      setVideoControlsUp(false);
       router.setParams({ id: nextItem.id });
       listRef.current?.scrollToIndex({ index: nextIndex, animated: true });
     },
@@ -262,19 +290,19 @@ export default function ItemScreen() {
       ? [
           {
             label: 'Share',
-            icon: <Ionicons name="share-outline" size={18} color={theme.text} />,
+            icon: <Ionicons name="share-outline" size={18} color={palette.text} />,
             onSelect: () => void onShare(),
           },
         ]
       : []),
     {
       label: 'Rename',
-      icon: <Ionicons name="pencil-outline" size={18} color={theme.text} />,
+      icon: <Ionicons name="pencil-outline" size={18} color={palette.text} />,
       onSelect: () => setRenaming(true),
     },
     {
       label: 'Move to folder',
-      icon: <Ionicons name="folder-outline" size={18} color={theme.text} />,
+      icon: <Ionicons name="folder-outline" size={18} color={palette.text} />,
       onSelect: () => setMoving(true),
     },
     {
@@ -329,6 +357,7 @@ export default function ItemScreen() {
                   onTapToggle={toggleChrome}
                   onSwipe={handleSwipe}
                   onVideoPlayingChange={setVideoPlaying}
+                  onVideoControlsChange={setVideoControlsUp}
                 />
               </View>
             )}
@@ -371,7 +400,16 @@ export default function ItemScreen() {
         <LinearGradient
           colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0.72)', 'rgba(0,0,0,0.92)']}
           locations={[0, 0.42, 1]}
-          style={[styles.bottomScrim, { paddingBottom: insets.bottom + Spacing.two }]}>
+          style={[
+            styles.bottomScrim,
+            {
+              bottom: playerBarReserve,
+              // The reserve already clears the player's bar, so its own inset
+              // is not needed twice while it is up.
+              paddingBottom:
+                playerBarReserve > 0 ? Spacing.two : insets.bottom + Spacing.two,
+            },
+          ]}>
           <View style={styles.actionRow}>
             <ActionButton icon="share-outline" label="Share" onPress={() => void onShare()} />
             <ActionButton
@@ -431,12 +469,14 @@ function ViewerStage({
   onTapToggle,
   onSwipe,
   onVideoPlayingChange,
+  onVideoControlsChange,
 }: {
   item: VaultItem;
   isActive: boolean;
   onTapToggle: () => void;
   onSwipe: (direction: SwipeDirection) => void;
   onVideoPlayingChange: (playing: boolean) => void;
+  onVideoControlsChange: (up: boolean) => void;
 }) {
   const [decrypt, setDecrypt] = useState<DecryptState>({
     phase: 'working',
@@ -508,6 +548,9 @@ function ViewerStage({
         uri={decrypt.file.uri}
         isActive={isActive}
         onPlayingChange={onVideoPlayingChange}
+        // Only the focused page reports: neighbouring pages are mounted too,
+        // and a parked one must never release the strip the playing page needs.
+        onControlsChange={isActive ? onVideoControlsChange : undefined}
       />
     );
   } else if (item.kind === 'audio') {
@@ -596,23 +639,72 @@ function ErrorState({
   );
 }
 
+/** `0:42` for a position given in seconds. */
+function printClock(seconds: number): string {
+  return formatDuration(Math.max(0, seconds) * 1000) ?? '0:00';
+}
+
 function VideoPlayerView({
   uri,
   isActive,
   onPlayingChange,
+  onControlsChange,
 }: {
   uri: string;
   isActive: boolean;
   onPlayingChange: (playing: boolean) => void;
+  /** Undefined for pages that are not focused; those stay silent. */
+  onControlsChange?: (up: boolean) => void;
 }) {
   // Deliberately no autoplay: opening a file should never start playing sound.
   const [started, setStarted] = useState(false);
-  const player = useVideoPlayer({ uri });
+  const [playing, setPlaying] = useState(false);
+  const [barShown, setBarShown] = useState(true);
+  const [taps, setTaps] = useState(0);
+  const [elapsed, setElapsed] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [muted, setMuted] = useState(false);
+  const [trackWidth, setTrackWidth] = useState(0);
+  const insets = useSafeAreaInsets();
+  const viewRef = useRef<VideoView>(null);
+  const player = useVideoPlayer(uri, (instance) => {
+    // Two ticks a second keep the clock and the seek bar live without waking
+    // the JS thread more often than the eye can see.
+    instance.timeUpdateEventInterval = 0.5;
+  });
   const { status } = useEvent(player, 'statusChange', { status: player.status });
 
-  // Lets the parent fade its chrome out while the video is playing and bring
-  // it back on pause/end, so the overlay never fights the native controls.
-  useEventListener(player, 'playingChange', ({ isPlaying }) => onPlayingChange(isPlaying));
+  useEventListener(player, 'timeUpdate', ({ currentTime }) => {
+    setElapsed(currentTime);
+    // `duration` is NaN until the source knows its length; keep the last value.
+    if (Number.isFinite(player.duration) && player.duration > 0) {
+      setDuration(player.duration);
+    }
+  });
+
+  // Lets the parent fade its chrome out while the video plays and bring it
+  // back on pause/end, so nothing competes with the picture.
+  useEventListener(player, 'playingChange', ({ isPlaying }) => {
+    setPlaying(isPlaying);
+    setBarShown(true);
+    onPlayingChange(isPlaying);
+  });
+
+  // While the video plays the bar fades after a few seconds; pausing keeps it
+  // up, and any tap on the picture brings it back for another few.
+  useEffect(() => {
+    if (!started || !playing) return;
+    const timer = setTimeout(() => setBarShown(false), 3500);
+    return () => clearTimeout(timer);
+  }, [started, playing, taps]);
+
+  const barVisible = started && barShown;
+
+  // The parent lifts its Share / Delete / More row by exactly this much while
+  // the bar is up, so the two never stack on each other.
+  useEffect(() => {
+    onControlsChange?.(barVisible);
+  }, [barVisible, onControlsChange]);
 
   // A video that is not the current page must not keep playing in the
   // background while the user swipes through the gallery.
@@ -625,9 +717,11 @@ function VideoPlayerView({
 
   const failed = status === 'error';
   const buffering = started && (status === 'loading' || status === 'idle');
+  const progress = duration > 0 ? Math.max(0, Math.min(1, elapsed / duration)) : 0;
 
   const start = () => {
     setStarted(true);
+    setBarShown(true);
     player.play();
   };
 
@@ -636,17 +730,60 @@ function VideoPlayerView({
     void player.replaceAsync({ uri });
   };
 
+  const togglePlay = () => {
+    if (playing) player.pause();
+    else player.play();
+  };
+
+  const toggleMute = () => {
+    const next = !muted;
+    setMuted(next);
+    // `muted` is a documented setter on the native player; it is not React
+    // state, so the immutability rule does not apply here.
+    // eslint-disable-next-line react-hooks/immutability
+    player.muted = next;
+  };
+
+  const seekTo = (event: GestureResponderEvent) => {
+    if (duration <= 0 || trackWidth <= 0) return;
+    const ratio = Math.max(0, Math.min(1, event.nativeEvent.locationX / trackWidth));
+    const target = ratio * duration;
+    player.seekBy(target - player.currentTime);
+    setElapsed(target);
+    setTaps((value) => value + 1);
+  };
+
+  const revealBar = () => {
+    setBarShown((shown) => !shown);
+    setTaps((value) => value + 1);
+  };
+
   return (
     <View style={StyleSheet.absoluteFill}>
-      <VideoView
-        player={player}
-        style={StyleSheet.absoluteFill}
-        contentFit="contain"
-        nativeControls={started}
-        fullscreenOptions={{ enable: true }}
-        // TextureView lets our play overlay sit on top of the video surface.
-        surfaceType="textureView"
-      />
+      {/*
+       * Android draws edge-to-edge, so the video surface stops above the
+       * navigation / gesture bar; the control bar below is a React view that
+       * sits above the same inset. Neither can reach the system buttons.
+       */}
+      <View
+        style={[
+          StyleSheet.absoluteFill,
+          { bottom: Platform.OS === 'android' ? insets.bottom : 0 },
+        ]}>
+        <VideoView
+          ref={viewRef}
+          player={player}
+          style={StyleSheet.absoluteFill}
+          contentFit="contain"
+          // Our own bar replaces media3's controller, which laid itself out
+          // against the very bottom of the view and ended up on the system
+          // navigation buttons.
+          nativeControls={false}
+          fullscreenOptions={{ enable: true }}
+          // TextureView lets our controls sit on top of the video surface.
+          surfaceType="textureView"
+        />
+      </View>
 
       {failed ? (
         <View style={[StyleSheet.absoluteFill, styles.stageOverlay]}>
@@ -668,11 +805,70 @@ function VideoPlayerView({
           </View>
         </View>
       ) : started ? (
-        buffering ? (
-          <View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.buffering]}>
-            <ActivityIndicator color="#FFFFFF" />
-          </View>
-        ) : null
+        <>
+          {buffering ? (
+            <View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.buffering]}>
+              <ActivityIndicator color="#FFFFFF" />
+            </View>
+          ) : null}
+
+          <Pressable
+            style={StyleSheet.absoluteFill}
+            onPress={revealBar}
+            accessibilityRole="button"
+            accessibilityLabel={barVisible ? 'Hide player controls' : 'Show player controls'}
+          />
+
+          {barVisible ? (
+            <View style={[styles.playerBar, { bottom: insets.bottom + Spacing.two }]}>
+              <Pressable
+                onPress={togglePlay}
+                hitSlop={10}
+                accessibilityRole="button"
+                accessibilityLabel={playing ? 'Pause' : 'Play'}>
+                <Ionicons name={playing ? 'pause' : 'play'} size={20} color="#FFFFFF" />
+              </Pressable>
+
+              <Text style={styles.playerClock}>{printClock(elapsed)}</Text>
+
+              <Pressable
+                style={styles.playerTrackWrap}
+                onLayout={(event) => setTrackWidth(event.nativeEvent.layout.width)}
+                onPress={seekTo}
+                accessibilityRole="adjustable"
+                accessibilityLabel="Seek">
+                <View style={styles.playerTrack}>
+                  <View style={[styles.playerProgress, { width: `${progress * 100}%` }]} />
+                </View>
+                <View pointerEvents="none" style={[styles.playerThumb, { left: `${progress * 100}%` }]} />
+              </Pressable>
+
+              <Text style={styles.playerClock}>
+                {duration > 0 ? printClock(duration) : '--:--'}
+              </Text>
+
+              <Pressable
+                onPress={toggleMute}
+                hitSlop={10}
+                accessibilityRole="button"
+                accessibilityLabel={muted ? 'Unmute' : 'Mute'}>
+                <Ionicons
+                  name={muted ? 'volume-mute' : 'volume-high'}
+                  size={18}
+                  color="#FFFFFF"
+                />
+              </Pressable>
+
+              <Pressable
+                onPress={() => void viewRef.current?.enterFullscreen()}
+                hitSlop={10}
+                accessibilityRole="button"
+                accessibilityLabel="Full screen">
+                <Ionicons name="expand" size={18} color="#FFFFFF" />
+              </Pressable>
+            </View>
+          ) : null}
+        </>
       ) : (
         <Pressable
           onPress={start}
@@ -750,7 +946,7 @@ function DocumentView({
     <View style={styles.docStage}>
       <View style={styles.docCard}>
         <LinearGradient
-          colors={['#6366F1', '#8B5CF6']}
+          colors={VAULT_ACCENTS.violet.gradient}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={styles.docIcon}>
@@ -858,7 +1054,7 @@ function MoveToFolderSheet({
   onClose: () => void;
   onChanged: () => Promise<void>;
 }) {
-  const theme = useTheme();
+  const palette = useVaultPalette();
   const { index } = useVaultIndex();
   if (!item || !index) return null;
 
@@ -869,7 +1065,7 @@ function MoveToFolderSheet({
         <Ionicons
           name={item.folderId === null ? 'radio-button-on' : 'radio-button-off'}
           size={18}
-          color={item.folderId === null ? Palette.primary : theme.text}
+          color={item.folderId === null ? palette.accent : palette.text}
         />
       ),
       onSelect: async () => {
@@ -883,7 +1079,7 @@ function MoveToFolderSheet({
         <Ionicons
           name={item.folderId === folder.id ? 'radio-button-on' : 'radio-button-off'}
           size={18}
-          color={item.folderId === folder.id ? Palette.primary : theme.text}
+          color={item.folderId === folder.id ? palette.accent : palette.text}
         />
       ),
       onSelect: async () => {
@@ -924,6 +1120,54 @@ const styles = StyleSheet.create({
   buffering: {
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  // In-app video bar: the seek bar, clock and buttons the player used to draw
+  // itself, positioned above the system navigation bar.
+  playerBar: {
+    position: 'absolute',
+    left: Spacing.two,
+    right: Spacing.two,
+    height: PLAYER_BAR_HEIGHT,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
+    paddingHorizontal: Spacing.three,
+    borderRadius: PLAYER_BAR_HEIGHT / 2,
+    backgroundColor: 'rgba(10,14,20,0.84)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.18)',
+  },
+  playerClock: {
+    color: 'rgba(255,255,255,0.88)',
+    fontSize: 11,
+    fontVariant: ['tabular-nums'],
+    minWidth: 30,
+    textAlign: 'center',
+  },
+  playerTrackWrap: {
+    flex: 1,
+    height: PLAYER_BAR_HEIGHT,
+    justifyContent: 'center',
+  },
+  playerTrack: {
+    height: 4,
+    borderRadius: 2,
+    overflow: 'hidden',
+    backgroundColor: 'rgba(255,255,255,0.24)',
+  },
+  playerProgress: {
+    height: '100%',
+    borderRadius: 2,
+    backgroundColor: '#FFFFFF',
+  },
+  playerThumb: {
+    position: 'absolute',
+    top: PLAYER_BAR_HEIGHT / 2 - 5,
+    width: 10,
+    height: 10,
+    marginLeft: -5,
+    borderRadius: 5,
+    backgroundColor: '#FFFFFF',
   },
 
   // chrome
@@ -1072,7 +1316,7 @@ const styles = StyleSheet.create({
     minHeight: 42,
     paddingHorizontal: Spacing.four,
     borderRadius: 21,
-    backgroundColor: Palette.primary,
+    backgroundColor: '#22C55E',
   },
   primaryText: {
     color: '#FFFFFF',

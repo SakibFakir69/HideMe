@@ -1,22 +1,22 @@
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
-import { Alert, FlatList, StyleSheet, View } from 'react-native';
+import { Alert, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import type { File } from 'expo-file-system';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ActionSheetModal, type SheetAction } from '@/components/vault/action-sheet-modal';
+import { AdBanner } from '@/components/vault/ad-banner';
 import { confirmDestructive } from '@/components/vault/confirm';
 import { PhotoRow, usePhotoRows } from '@/components/vault/photo-grid';
 import { SelectionBar } from '@/components/vault/selection-bar';
 import { SkeletonGrid } from '@/components/vault/skeleton-grid';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { Chip } from '@/components/ui/chip';
+import { VaultHeader, VaultSelectPill } from '@/components/vault/vault-header';
 import { Fab } from '@/components/ui/fab';
-import { SectionTitle } from '@/components/ui/section-title';
-import { Fonts, MaxContentWidth, Spacing } from '@/constants/theme';
-import { useTheme } from '@/hooks/use-theme';
+import { VAULT_ACCENTS } from '@/constants/vault-theme';
+import { Fonts, MaxContentWidth, Radius, Spacing } from '@/constants/theme';
+import { useVaultPalette } from '@/hooks/use-vault-palette';
 import { GRID_GAP } from '@/hooks/use-grid-columns';
 import { useVaultIndex } from '@/hooks/use-vault-index';
 import { canSaveAs, saveExportAs } from '@/lib/export-save';
@@ -32,7 +32,7 @@ const NUM_COLUMNS = 3;
 type MediaFilter = 'all' | 'photo' | 'video';
 
 export default function GalleryScreen() {
-  const theme = useTheme();
+  const palette = useVaultPalette();
   const { index, loading } = useVaultIndex();
   const [filter, setFilter] = useState<MediaFilter>('all');
   const [selected, setSelected] = useState<Set<string> | null>(null);
@@ -54,6 +54,23 @@ export default function GalleryScreen() {
   // The grid keeps the real photo ratio: every row is justified to the full
   // width, so the tiles are not a uniform square crop.
   const rows = usePhotoRows(items, NUM_COLUMNS);
+
+  // How many files sit behind each filter chip.
+  const mediaCounts = useMemo(() => {
+    const counts = { all: 0, photo: 0, video: 0 };
+    if (!index) return counts;
+    for (const item of searchItems(index, '')) {
+      if (item.kind !== 'photo' && item.kind !== 'video') continue;
+      counts.all += 1;
+      counts[item.kind] += 1;
+    }
+    return counts;
+  }, [index]);
+
+  const mediaCount = useCallback(
+    (kind: MediaFilter) => mediaCounts[kind],
+    [mediaCounts],
+  );
 
   // Stable callbacks: the grid re-renders on every index mutation, and new
   // function identities would defeat the memoized ItemTile.
@@ -168,22 +185,22 @@ export default function GalleryScreen() {
     const actions: SheetAction[] = [
       {
         label: 'Share archive',
-        icon: <Ionicons name="share-outline" size={18} color={theme.text} />,
+        icon: <Ionicons name="share-outline" size={18} color={palette.text} />,
         onSelect: () => void onExportShare(),
       },
     ];
     if (canSaveAs()) {
       actions.push({
         label: 'Save to a file…',
-        icon: <Ionicons name="save-outline" size={18} color={theme.text} />,
+        icon: <Ionicons name="save-outline" size={18} color={palette.text} />,
         onSelect: () => void onExportSave(),
       });
     }
     return actions;
-  }, [exported, onExportSave, onExportShare, theme.text]);
+  }, [exported, onExportSave, onExportShare, palette.text]);
 
   return (
-    <ThemedView style={styles.container}>
+    <View style={[styles.container, { backgroundColor: palette.background }]}>
       <SafeAreaView style={styles.safeArea} edges={['top']}>
         <FlatList
           key={`cols-${NUM_COLUMNS}`}
@@ -193,35 +210,43 @@ export default function GalleryScreen() {
           style={styles.listFlex}
           ListHeaderComponent={
             <View style={styles.headerBlock}>
-              <View style={styles.toolbarRow}>
-                <ThemedText type="subtitle" style={styles.title}>
-                  Gallery
-                </ThemedText>
-                {items.length > 0 && (
-                  <ThemedText
-                    type="small"
-                    style={styles.selectAction}
-                    onPress={() => setSelected(selectMode ? null : new Set())}>
-                    {selectMode ? 'Cancel' : 'Select'}
-                  </ThemedText>
-                )}
-              </View>
+              <VaultHeader
+                icon="images"
+                gradient={VAULT_ACCENTS.emerald.gradient}
+                title="Gallery"
+                subtitle="Your private media"
+                action={
+                  <VaultSelectPill
+                    label={selectMode ? 'Cancel' : 'Select'}
+                    active={selectMode}
+                    onPress={() => setSelected(selectMode ? null : new Set())}
+                  />
+                }
+              />
+
               <View style={styles.chips}>
-                <Chip label="All" active={filter === 'all'} onPress={() => setFilter('all')} />
-                <Chip
+                <MediaChip
+                  icon="grid"
+                  label="All"
+                  count={mediaCount('all')}
+                  active={filter === 'all'}
+                  onPress={() => setFilter('all')}
+                />
+                <MediaChip
+                  icon="images"
                   label="Photos"
+                  count={mediaCount('photo')}
                   active={filter === 'photo'}
                   onPress={() => setFilter('photo')}
                 />
-                <Chip
+                <MediaChip
+                  icon="play"
                   label="Videos"
+                  count={mediaCount('video')}
                   active={filter === 'video'}
                   onPress={() => setFilter('video')}
                 />
               </View>
-              <SectionTitle
-                label={`${items.length} item${items.length === 1 ? '' : 's'}`}
-              />
             </View>
           }
           ListEmptyComponent={
@@ -229,11 +254,11 @@ export default function GalleryScreen() {
               <SkeletonGrid columns={NUM_COLUMNS} rows={3} />
             ) : (
               <View style={styles.emptyBox}>
-                <Ionicons name="images-outline" size={30} color={theme.textSecondary} />
-                <ThemedText type="small" themeColor="textSecondary" style={styles.emptyText}>
+                <Ionicons name="images-outline" size={30} color={palette.textSecondary} />
+                <Text style={[styles.emptyText, { color: palette.textSecondary }]}>
                   No photos or videos yet.{'\n'}Tap + to import them — everything is encrypted on
                   this device.
-                </ThemedText>
+                </Text>
               </View>
             )
           }
@@ -249,6 +274,7 @@ export default function GalleryScreen() {
           initialNumToRender={6}
           windowSize={7}
           removeClippedSubviews
+          ListFooterComponent={selectMode ? undefined : <AdBanner />}
         />
         {selectMode && selected.size > 0 && (
           <SelectionBar
@@ -261,7 +287,9 @@ export default function GalleryScreen() {
             onDelete={() => void onDeleteSelected()}
           />
         )}
-        {!selectMode && <Fab label="Import files" onPress={() => router.push('/vault/import')} />}
+        {!selectMode && (
+          <Fab accent="emerald" label="Import files" onPress={() => router.push('/vault/import')} />
+        )}
       </SafeAreaView>
 
       <ActionSheetModal
@@ -271,7 +299,54 @@ export default function GalleryScreen() {
         actions={exportActions}
         onClose={() => setExportSheetOpen(false)}
       />
-    </ThemedView>
+    </View>
+  );
+}
+
+/** One filter chip: the icon, the name and how many files sit behind it. */
+function MediaChip({
+  icon,
+  label,
+  count,
+  active,
+  onPress,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  count: number;
+  active: boolean;
+  onPress: () => void;
+}) {
+  const palette = useVaultPalette();
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityState={{ selected: active }}
+      accessibilityLabel={`${label}, ${count} items`}
+      style={({ pressed }) => [styles.chip, pressed && styles.pressed]}>
+      {active ? (
+        <LinearGradient
+          colors={VAULT_ACCENTS.emerald.gradient}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={StyleSheet.absoluteFill}
+        />
+      ) : (
+        <View
+          style={[StyleSheet.absoluteFill, { backgroundColor: palette.surface }]}
+        />
+      )}
+      <Ionicons
+        name={icon}
+        size={16}
+        color={active ? '#FFFFFF' : palette.textSecondary}
+      />
+      <Text style={[styles.chipLabel, { color: active ? '#FFFFFF' : palette.text }]}>{label}</Text>
+      <Text style={[styles.chipCount, { color: active ? 'rgba(255,255,255,0.85)' : palette.textSecondary }]}>
+        {`(${count})`}
+      </Text>
+    </Pressable>
   );
 }
 
@@ -308,20 +383,27 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-  title: {
-    fontSize: 24,
-    lineHeight: 30,
-    fontFamily: Fonts.sansBold,
-  },
-  selectAction: {
-    color: '#818CF8',
-    fontFamily: Fonts.sansBold,
-    fontSize: 15,
-    paddingHorizontal: Spacing.one,
-  },
   chips: {
     flexDirection: 'row',
     gap: Spacing.two,
+  },
+  chip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderRadius: Radius.pill,
+    paddingHorizontal: Spacing.three - 4,
+    height: 42,
+    overflow: 'hidden',
+    flexShrink: 1,
+  },
+  chipLabel: {
+    fontFamily: Fonts.sansSemiBold,
+    fontSize: 13.5,
+  },
+  chipCount: {
+    fontFamily: Fonts.sansMedium,
+    fontSize: 12.5,
   },
   gridRow: {
     gap: GRID_GAP,
@@ -336,5 +418,10 @@ const styles = StyleSheet.create({
   emptyText: {
     textAlign: 'center',
     lineHeight: 20,
+    fontFamily: Fonts.sans,
+    fontSize: 14,
+  },
+  pressed: {
+    opacity: 0.75,
   },
 });

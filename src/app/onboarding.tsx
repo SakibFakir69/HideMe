@@ -1,11 +1,13 @@
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  Animated,
   Pressable,
   ScrollView,
   StyleSheet,
+  Text,
   View,
   useWindowDimensions,
   type NativeScrollEvent,
@@ -14,39 +16,49 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { GradientButton } from '@/components/ui/gradient-button';
-import { BrandGradient, Fonts, Palette, Radius, Spacing } from '@/constants/theme';
-import { useTheme } from '@/hooks/use-theme';
+import {
+  VAULT_ACCENTS,
+  VAULT_CATEGORIES,
+  VAULT_TONES,
+  type VaultTone,
+} from '@/constants/vault-theme';
+import { Fonts, Radius, Spacing } from '@/constants/theme';
+import { useVaultPalette } from '@/hooks/use-vault-palette';
+import { t } from '@/lib/i18n';
 import { markOnboarded } from '@/lib/onboarding';
 
 interface Page {
   icon: keyof typeof Ionicons.glyphMap;
-  title: string;
-  body: string;
+  /** i18n keys for the title and body */
+  titleKey: string;
+  bodyKey: string;
+  /** The hue of the page's icon tile — the settings rows' language. */
+  tone: VaultTone;
 }
 
 const PAGES: Page[] = [
   {
     icon: 'calculator-outline',
-    title: 'A calculator, nothing more',
-    body: 'It really is one — add, subtract, divide. Nobody glancing at your screen sees a vault.',
+    titleKey: 'onboarding.p1.title',
+    bodyKey: 'onboarding.p1.body',
+    tone: 'green',
   },
   {
     icon: 'lock-closed-outline',
-    title: 'Your code opens the vault',
-    body: 'Type your secret code into the calculator to reveal an encrypted vault for photos, videos and documents. Everything stays on this device.',
+    titleKey: 'onboarding.p2.title',
+    bodyKey: 'onboarding.p2.body',
+    tone: 'violet',
   },
   {
     icon: 'warning-outline',
-    title: 'There is no password reset',
-    body: 'Files are encrypted with a key only your code can open. Lose the code and the files are unrecoverable — write it down somewhere safe.',
+    titleKey: 'onboarding.p3.title',
+    bodyKey: 'onboarding.p3.body',
+    tone: 'amber',
   },
 ];
 
 export default function OnboardingScreen() {
-  const theme = useTheme();
+  const palette = useVaultPalette();
   const { width } = useWindowDimensions();
   const scrollRef = useRef<ScrollViewInstance>(null);
   const [page, setPage] = useState(0);
@@ -83,28 +95,41 @@ export default function OnboardingScreen() {
   );
 
   return (
-    <ThemedView style={styles.container}>
+    <View style={[styles.container, { backgroundColor: palette.background }]}>
+      {/* the light source in the top right corner — the vault's signature */}
+      <LinearGradient
+        colors={[palette.glow, 'transparent']}
+        start={{ x: 1, y: 0 }}
+        end={{ x: 0.1, y: 0.55 }}
+        style={styles.topGlow}
+        pointerEvents="none"
+      />
+
       <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
         <View style={styles.topRow}>
           <View style={styles.brand}>
             <LinearGradient
-              colors={[...BrandGradient]}
+              colors={VAULT_ACCENTS.emerald.gradient}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
               style={styles.brandBadge}>
               <Ionicons name="lock-closed" size={14} color="#FFFFFF" />
             </LinearGradient>
-            <ThemedText type="smallBold">HideMe</ThemedText>
+            <Text style={[styles.brandName, { color: palette.text }]}>HideMe</Text>
           </View>
           <Pressable
             onPress={finish}
             hitSlop={Spacing.two}
             accessibilityRole="button"
-            accessibilityLabel="Skip onboarding"
-            style={({ pressed }) => [styles.skip, pressed && styles.pressed]}>
-            <ThemedText type="small" themeColor="textSecondary">
-              Skip
-            </ThemedText>
+            accessibilityLabel={t('onboarding.skip')}
+            style={({ pressed }) => [
+              styles.skip,
+              { backgroundColor: palette.surface },
+              pressed && styles.pressed,
+            ]}>
+            <Text style={[styles.skipLabel, { color: palette.textSecondary }]}>
+              {t('onboarding.skip')}
+            </Text>
           </Pressable>
         </View>
 
@@ -115,62 +140,244 @@ export default function OnboardingScreen() {
           showsHorizontalScrollIndicator={false}
           onMomentumScrollEnd={onMomentumEnd}
           style={styles.pager}>
-          {PAGES.map((item) => (
-            <View key={item.title} style={[styles.slide, { width }]}>
-              <LinearGradient
-                colors={[...BrandGradient]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={styles.iconBadge}>
-                <Ionicons name={item.icon} size={38} color="#FFFFFF" />
-              </LinearGradient>
-              <ThemedText type="title" style={styles.title}>
-                {item.title}
-              </ThemedText>
-              <ThemedText type="small" themeColor="textSecondary" style={styles.text}>
-                {item.body}
-              </ThemedText>
-            </View>
-          ))}
+          {PAGES.map((item, index) => {
+            const tone = VAULT_TONES[item.tone];
+            return (
+              <View key={item.titleKey} style={[styles.slide, { width }]}>
+                {index === 0 ? (
+                  <CalcDemo active={page === 0} />
+                ) : (
+                  <View style={[styles.iconGlow, { shadowColor: tone.color }]}>
+                    <LinearGradient
+                      colors={['rgba(255,255,255,0.07)', 'rgba(255,255,255,0.02)']}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 0, y: 1 }}
+                      style={[styles.iconBadge, { borderColor: tone.wash }]}>
+                      <View style={[styles.iconTile, { backgroundColor: tone.wash }]}>
+                        <Ionicons name={item.icon} size={34} color={tone.color} />
+                      </View>
+                    </LinearGradient>
+                  </View>
+                )}
+                <Text style={[styles.title, { color: palette.text }]}>{t(item.titleKey)}</Text>
+                <Text style={[styles.text, { color: palette.textSecondary }]}>
+                  {t(item.bodyKey)}
+                </Text>
+              </View>
+            );
+          })}
         </ScrollView>
 
         <View style={styles.footer}>
           <View style={styles.dots}>
             {PAGES.map((item, index) => (
               <Pressable
-                key={item.title}
+                key={item.titleKey}
                 onPress={() => goTo(index)}
                 hitSlop={Spacing.two}
                 accessibilityRole="button"
-                accessibilityLabel={`Go to page ${index + 1}`}>
+                accessibilityLabel={t('onboarding.page.aria', { page: index + 1 })}>
                 <View
                   style={[
                     styles.dot,
                     index === page
-                      ? [styles.dotActive, { backgroundColor: Palette.primary }]
-                      : { backgroundColor: theme.backgroundSelected },
+                      ? [styles.dotActive, { backgroundColor: palette.accent }]
+                      : { backgroundColor: palette.chip },
                   ]}
                 />
               </Pressable>
             ))}
           </View>
-          <GradientButton
-            label={isLast ? 'Set up my code' : 'Continue'}
+          <Pressable
             onPress={onNext}
-            style={styles.cta}
-          />
-          <ThemedText type="small" themeColor="textSecondary" style={styles.hint}>
-            {isLast ? 'Takes about a minute.' : 'Swipe or tap continue.'}
-          </ThemedText>
+            accessibilityRole="button"
+            accessibilityLabel={isLast ? t('onboarding.cta.finish') : t('onboarding.cta.next')}
+            style={({ pressed }) => [styles.ctaWrap, pressed && styles.pressed]}>
+            <LinearGradient
+              colors={VAULT_ACCENTS.emerald.gradient}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.cta}>
+              <Text style={styles.ctaLabel}>
+                {isLast ? t('onboarding.cta.finish') : t('onboarding.cta.next')}
+              </Text>
+              <Ionicons
+                name={isLast ? 'lock-closed' : 'arrow-forward'}
+                size={18}
+                color="#FFFFFF"
+              />
+            </LinearGradient>
+          </Pressable>
+          <Text style={[styles.hint, { color: palette.textSecondary }]}>
+            {isLast ? t('onboarding.hint.finish') : t('onboarding.hint.swipe')}
+          </Text>
         </View>
       </SafeAreaView>
-    </ThemedView>
+    </View>
+  );
+}
+
+const DEMO_CODE = ['1', '2', '3', '4', '5', '6'];
+const DEMO_DIGIT_MS = 240;
+const DEMO_HOLD_MS = 1600;
+
+/**
+ * The "how it works" demo for the calculator page: a mini calculator types
+ * the secret code, presses "=", and the display flips into the unlocked
+ * vault — then resets and loops. Pauses while the page is off-screen.
+ */
+function CalcDemo({ active }: { active: boolean }) {
+  const palette = useVaultPalette();
+  const [typed, setTyped] = useState(0);
+  // Animated values live in lazy state — they are stable and never re-created.
+  const [eqGlow] = useState(() => new Animated.Value(0));
+  const [reveal] = useState(() => new Animated.Value(0));
+
+  useEffect(() => {
+    if (!active) return;
+    let alive = true;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    const schedule = (fn: () => void, ms: number) => {
+      timer = setTimeout(() => {
+        if (alive) fn();
+      }, ms);
+    };
+
+    const loop = () => {
+      if (!alive) return;
+      setTyped(0);
+      reveal.setValue(0);
+      eqGlow.setValue(0);
+
+      DEMO_CODE.forEach((_, i) => {
+        schedule(() => setTyped(i + 1), (i + 1) * DEMO_DIGIT_MS);
+      });
+
+      const eqAt = DEMO_CODE.length * DEMO_DIGIT_MS + 160;
+      schedule(() => {
+        Animated.sequence([
+          Animated.timing(eqGlow, { toValue: 1, duration: 110, useNativeDriver: true }),
+          Animated.timing(eqGlow, { toValue: 0, duration: 180, useNativeDriver: true }),
+        ]).start();
+      }, eqAt);
+
+      schedule(() => {
+        Animated.timing(reveal, { toValue: 1, duration: 380, useNativeDriver: true }).start();
+      }, eqAt + 320);
+
+      schedule(loop, eqAt + 320 + DEMO_HOLD_MS);
+    };
+
+    loop();
+    return () => {
+      alive = false;
+      if (timer) clearTimeout(timer);
+    };
+  }, [active, eqGlow, reveal]);
+
+  const keypad: string[][] = [
+    ['1', '2', '3', '4'],
+    ['5', '6', '7', '8'],
+    ['9', '0', '⌫', '='],
+  ];
+
+  return (
+    <View
+      style={[styles.demoCard, { backgroundColor: palette.surface, borderColor: palette.border }]}
+      accessibilityLabel={t('onboarding.demo.aria')}>
+      {/* the display: calculator line crossfading into the vault grid */}
+      <View style={[styles.demoDisplay, { backgroundColor: palette.backgroundDeep }]}>
+        <Animated.View
+          style={[styles.demoDisplaySide, { opacity: reveal.interpolate({ inputRange: [0, 1], outputRange: [1, 0] }) }]}>
+          <Text style={[styles.demoExpr, { color: palette.textSecondary }]} numberOfLines={1}>
+            {typed < DEMO_CODE.length ? DEMO_CODE.slice(0, Math.max(typed - 3, 0)).join('') : ''}
+          </Text>
+          <Text style={[styles.demoValue, { color: palette.text }]} numberOfLines={1}>
+            {DEMO_CODE.slice(0, typed).join('') || '0'}
+          </Text>
+        </Animated.View>
+        <Animated.View
+          style={[
+            styles.demoDisplaySide,
+            styles.demoVault,
+            { opacity: reveal },
+          ]}>
+          <View style={styles.demoGrid}>
+            {Object.values(VAULT_CATEGORIES).map((category) => (
+              <LinearGradient
+                key={category.icon}
+                colors={category.gradient}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.demoTile}>
+                <Ionicons name={category.icon} size={14} color="#FFFFFF" />
+              </LinearGradient>
+            ))}
+          </View>
+          <View style={styles.demoUnlockRow}>
+            <Ionicons name="checkmark-circle" size={13} color={palette.accent} />
+            <Text style={[styles.demoUnlockText, { color: palette.textSecondary }]}>
+              {t('onboarding.demo.unlock')}
+            </Text>
+          </View>
+        </Animated.View>
+      </View>
+
+      <View style={styles.demoKeys}>
+        {keypad.map((row, rowIndex) => (
+          <View key={rowIndex} style={styles.demoRow}>
+            {row.map((key) => {
+              const isEq = key === '=';
+              return (
+                <View
+                  key={key}
+                  style={[
+                    styles.demoKey,
+                    {
+                      backgroundColor: isEq ? 'transparent' : palette.backgroundDeep,
+                      borderColor: palette.border,
+                    },
+                  ]}>
+                  {isEq ? (
+                    <Animated.View
+                      style={[
+                        StyleSheet.absoluteFill,
+                        {
+                          borderRadius: 10,
+                          backgroundColor: palette.accent,
+                          opacity: eqGlow.interpolate({ inputRange: [0, 1], outputRange: [0.25, 0.95] }),
+                        },
+                      ]}
+                    />
+                  ) : null}
+                  <Text
+                    style={[
+                      styles.demoKeyLabel,
+                      { color: isEq ? '#FFFFFF' : palette.textSecondary },
+                    ]}>
+                    {key}
+                  </Text>
+                </View>
+              );
+            })}
+          </View>
+        ))}
+      </View>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  topGlow: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    left: 0,
+    height: 260,
   },
   safeArea: {
     flex: 1,
@@ -189,15 +396,24 @@ const styles = StyleSheet.create({
     gap: Spacing.two,
   },
   brandBadge: {
-    width: 26,
-    height: 26,
-    borderRadius: Radius.sm,
+    width: 28,
+    height: 28,
+    borderRadius: 9,
     alignItems: 'center',
     justifyContent: 'center',
   },
+  brandName: {
+    fontFamily: Fonts.sansBold,
+    fontSize: 15,
+  },
   skip: {
-    paddingVertical: Spacing.one,
-    paddingHorizontal: Spacing.two,
+    paddingVertical: Spacing.one + 2,
+    paddingHorizontal: Spacing.three,
+    borderRadius: Radius.pill,
+  },
+  skipLabel: {
+    fontFamily: Fonts.sansSemiBold,
+    fontSize: 13.5,
   },
   pager: {
     flex: 1,
@@ -209,22 +425,31 @@ const styles = StyleSheet.create({
     gap: Spacing.three,
     paddingHorizontal: Spacing.five,
   },
+  iconGlow: {
+    shadowOpacity: 0.35,
+    shadowRadius: 24,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 8,
+  },
   iconBadge: {
-    width: 84,
-    height: 84,
-    borderRadius: 28,
+    width: 104,
+    height: 104,
+    borderRadius: 32,
+    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: Spacing.two,
-    shadowColor: Palette.primary,
-    shadowOpacity: 0.35,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 10 },
-    elevation: 6,
+  },
+  iconTile: {
+    width: 76,
+    height: 76,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   title: {
-    fontSize: 24,
-    lineHeight: 30,
+    fontFamily: Fonts.sansBold,
+    fontSize: 25,
+    lineHeight: 31,
     textAlign: 'center',
   },
   text: {
@@ -232,6 +457,7 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     fontSize: 15,
     maxWidth: 340,
+    fontFamily: Fonts.sans,
   },
   footer: {
     alignItems: 'center',
@@ -253,15 +479,117 @@ const styles = StyleSheet.create({
   dotActive: {
     width: 22,
   },
-  cta: {
+  ctaWrap: {
     width: '100%',
     maxWidth: 420,
+    shadowColor: '#10B981',
+    shadowOpacity: 0.4,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 8,
+  },
+  cta: {
+    minHeight: 54,
+    borderRadius: Radius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.two,
+    flexDirection: 'row',
+  },
+  ctaLabel: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontFamily: Fonts.sansBold,
   },
   hint: {
     fontSize: 12,
     fontFamily: Fonts.sans,
   },
   pressed: {
-    opacity: 0.75,
+    opacity: 0.8,
+  },
+  demoCard: {
+    width: 250,
+    borderRadius: 22,
+    borderWidth: 1,
+    padding: Spacing.three - 2,
+    gap: Spacing.two,
+    shadowColor: '#10B981',
+    shadowOpacity: 0.18,
+    shadowRadius: 26,
+    shadowOffset: { width: 0, height: 12 },
+    elevation: 8,
+  },
+  demoDisplay: {
+    height: 64,
+    borderRadius: 14,
+    overflow: 'hidden',
+  },
+  demoDisplaySide: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: 'flex-end',
+    justifyContent: 'flex-end',
+    paddingHorizontal: Spacing.two,
+    paddingBottom: Spacing.one + 2,
+  },
+  demoVault: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingBottom: 0,
+  },
+  demoExpr: {
+    fontFamily: Fonts.mono,
+    fontSize: 10,
+    minHeight: 12,
+  },
+  demoValue: {
+    fontFamily: Fonts.mono,
+    fontSize: 22,
+    fontVariant: ['tabular-nums'],
+  },
+  demoGrid: {
+    flexDirection: 'row',
+    gap: 5,
+    marginBottom: 5,
+  },
+  demoTile: {
+    width: 26,
+    height: 26,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  demoUnlockRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  demoUnlockText: {
+    fontFamily: Fonts.sansSemiBold,
+    fontSize: 10,
+  },
+  demoKeys: {
+    gap: Spacing.one + 2,
+  },
+  demoRow: {
+    flexDirection: 'row',
+    gap: Spacing.one + 2,
+  },
+  demoKey: {
+    flex: 1,
+    height: 34,
+    borderRadius: 10,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  demoKeyLabel: {
+    fontFamily: Fonts.sansSemiBold,
+    fontSize: 14,
   },
 });

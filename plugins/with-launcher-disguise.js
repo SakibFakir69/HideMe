@@ -65,22 +65,34 @@ function withLauncherAliases(config) {
   });
 }
 
+/**
+ * Each disguise ships as a background layer, a foreground layer, a legacy
+ * `layer-list` (API < 26) and an `adaptive-icon` in `drawable-v26`, so the
+ * launcher masks the art the same way it masks every other app instead of
+ * scaling a bare 108dp bitmap into a squircle.
+ */
 function withLauncherIcons(config) {
   return withDangerousMod(config, [
     'android',
     async (config) => {
-      const drawableDir = path.join(
+      const resDir = path.join(
         config.modRequest.platformProjectRoot,
         'app',
         'src',
         'main',
         'res',
-        'drawable',
       );
-      await fs.promises.mkdir(drawableDir, { recursive: true });
-      for (const disguise of DISGUISES) {
-        const source = path.join(__dirname, 'launcher-icons', `${disguise.drawable}.xml`);
-        await fs.promises.copyFile(source, path.join(drawableDir, `${disguise.drawable}.xml`));
+      for (const bucket of ['drawable', 'drawable-v26']) {
+        const sourceDir = path.join(__dirname, 'launcher-icons', bucket);
+        const targetDir = path.join(resDir, bucket);
+        await fs.promises.mkdir(targetDir, { recursive: true });
+        for (const file of await fs.promises.readdir(sourceDir)) {
+          if (!file.endsWith('.xml')) continue;
+          await fs.promises.copyFile(
+            path.join(sourceDir, file),
+            path.join(targetDir, file),
+          );
+        }
       }
       return config;
     },

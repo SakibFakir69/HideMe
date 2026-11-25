@@ -5,8 +5,8 @@ import type { VaultItem } from './vault-index-core';
  * without a renderer.
  */
 
-/** Gap between the tiles of a row. */
-export const GRID_GAP = 8;
+/** Gap between the tiles of a row — and between the rows themselves. */
+export const GRID_GAP = 12;
 /** The aspect ratio is clamped so one panorama cannot flatten a whole row. */
 const MIN_ASPECT = 0.55;
 const MAX_ASPECT = 2.1;

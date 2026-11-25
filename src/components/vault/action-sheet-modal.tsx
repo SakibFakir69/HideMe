@@ -3,7 +3,7 @@ import { Alert, Modal, Pressable, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { Fonts, Spacing } from '@/constants/theme';
-import { useTheme } from '@/hooks/use-theme';
+import { useVaultPalette } from '@/hooks/use-vault-palette';
 
 export interface SheetAction {
   label: string;
@@ -21,11 +21,11 @@ interface ActionSheetModalProps {
 }
 
 export function ActionSheetModal({ visible, title, subtitle, actions, onClose }: ActionSheetModalProps) {
-  const theme = useTheme();
+  const palette = useVaultPalette();
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <Pressable style={styles.backdrop} onPress={onClose}>
-        <Pressable style={[styles.card, { backgroundColor: theme.backgroundElement }]}>
+        <Pressable style={[styles.card, { backgroundColor: palette.surface }]}>
           {title !== undefined && (
             <View style={styles.header}>
               <ThemedText type="smallBold" numberOfLines={1}>
@@ -60,8 +60,8 @@ export function ActionSheetModal({ visible, title, subtitle, actions, onClose }:
               accessibilityRole="button"
               style={({ pressed }) => [
                 styles.action,
-                { borderTopColor: theme.backgroundSelected },
-                pressed && { backgroundColor: theme.backgroundSelected },
+                { borderTopColor: palette.surfaceHigh },
+                pressed && { backgroundColor: palette.surfaceHigh },
               ]}>
               {action.icon}
               <ThemedText
@@ -76,8 +76,8 @@ export function ActionSheetModal({ visible, title, subtitle, actions, onClose }:
             accessibilityRole="button"
             style={({ pressed }) => [
               styles.action,
-              { borderTopColor: theme.backgroundSelected },
-              pressed && { backgroundColor: theme.backgroundSelected },
+              { borderTopColor: palette.surfaceHigh },
+              pressed && { backgroundColor: palette.surfaceHigh },
             ]}>
             <ThemedText type="small" themeColor="textSecondary">
               Cancel

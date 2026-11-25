@@ -1,0 +1,103 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Drop shadow -->
+    <path
+        android:fillAlpha="0.42"
+        android:fillColor="#070B14"
+        android:pathData="M40,21h30a13,13 0 0 1 13,13v40a13,13 0 0 1 -13,13H40a13,13 0 0 1 -13,-13V34a13,13 0 0 1 13,-13z" />
+    <!-- Body -->
+    <path
+        android:strokeWidth="0.9"
+        android:strokeColor="#A9BACF"
+        android:pathData="M38,19h32a13,13 0 0 1 13,13v42a13,13 0 0 1 -13,13H38a13,13 0 0 1 -13,-13V32a13,13 0 0 1 13,-13z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:startX="54"
+                android:startY="19"
+                android:endX="54"
+                android:endY="87"
+                android:type="linear">
+                <item android:offset="0" android:color="#FFFFFFFF" />
+                <item android:offset="0.55" android:color="#FFF3F7FC" />
+                <item android:offset="1" android:color="#FFD5E0EE" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <!-- Screen bezel -->
+    <path android:pathData="M38,26h32a6,6 0 0 1 6,6v7a6,6 0 0 1 -6,6H38a6,6 0 0 1 -6,-6v-7a6,6 0 0 1 6,-6z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:startX="54"
+                android:startY="26"
+                android:endX="54"
+                android:endY="45"
+                android:type="linear">
+                <item android:offset="0" android:color="#FF050B14" />
+                <item android:offset="1" android:color="#FF16283F" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <!-- Screen contents: the result reads 0, like a calculator at rest -->
+    <path
+        android:fillType="evenOdd"
+        android:fillColor="#9BDCF8"
+        android:pathData="M66.6,29h1.8a3.6,3.6 0 0 1 3.6,3.6v5.8a3.6,3.6 0 0 1 -3.6,3.6h-1.8a3.6,3.6 0 0 1 -3.6,-3.6v-5.8a3.6,3.6 0 0 1 3.6,-3.6zM66.8,31a1.8,1.8 0 0 0 -1.8,1.8v5.4a1.8,1.8 0 0 0 1.8,1.8h1.4a1.8,1.8 0 0 0 1.8,-1.8v-5.4a1.8,1.8 0 0 0 -1.8,-1.8z" />
+    <path
+        android:fillAlpha="0.35"
+        android:fillColor="#7DD3FC"
+        android:pathData="M38,32.2h7.6a1.2,1.2 0 0 1 0,2.4H38a1.2,1.2 0 0 1 0,-2.4z" />
+    <path
+        android:fillAlpha="0.2"
+        android:fillColor="#7DD3FC"
+        android:pathData="M38,37.4h11.6a1.2,1.2 0 0 1 0,2.4H38a1.2,1.2 0 0 1 0,-2.4z" />
+    <!-- Keys: function row -->
+    <path
+        android:fillColor="#A7B7CC"
+        android:pathData="M33.8,51.6h4.6a2.8,2.8 0 0 1 2.8,2.8v2.8a2.8,2.8 0 0 1 -2.8,2.8h-4.6a2.8,2.8 0 0 1 -2.8,-2.8v-2.8a2.8,2.8 0 0 1 2.8,-2.8z" />
+    <path
+        android:fillColor="#A7B7CC"
+        android:pathData="M45.9,51.6h4.6a2.8,2.8 0 0 1 2.8,2.8v2.8a2.8,2.8 0 0 1 -2.8,2.8h-4.6a2.8,2.8 0 0 1 -2.8,-2.8v-2.8a2.8,2.8 0 0 1 2.8,-2.8z" />
+    <path
+        android:fillColor="#A7B7CC"
+        android:pathData="M58,51.6h4.6a2.8,2.8 0 0 1 2.8,2.8v2.8a2.8,2.8 0 0 1 -2.8,2.8H58a2.8,2.8 0 0 1 -2.8,-2.8v-2.8a2.8,2.8 0 0 1 2.8,-2.8z" />
+    <path
+        android:fillColor="#F59E0B"
+        android:pathData="M70.1,51.6h4.6a2.8,2.8 0 0 1 2.8,2.8v2.8a2.8,2.8 0 0 1 -2.8,2.8h-4.6a2.8,2.8 0 0 1 -2.8,-2.8v-2.8a2.8,2.8 0 0 1 2.8,-2.8z" />
+    <!-- Keys: second row -->
+    <path
+        android:fillColor="#C4D2E4"
+        android:pathData="M33.8,62.4h4.6a2.8,2.8 0 0 1 2.8,2.8v2.8a2.8,2.8 0 0 1 -2.8,2.8h-4.6a2.8,2.8 0 0 1 -2.8,-2.8v-2.8a2.8,2.8 0 0 1 2.8,-2.8z" />
+    <path
+        android:fillColor="#C4D2E4"
+        android:pathData="M45.9,62.4h4.6a2.8,2.8 0 0 1 2.8,2.8v2.8a2.8,2.8 0 0 1 -2.8,2.8h-4.6a2.8,2.8 0 0 1 -2.8,-2.8v-2.8a2.8,2.8 0 0 1 2.8,-2.8z" />
+    <path
+        android:fillColor="#C4D2E4"
+        android:pathData="M58,62.4h4.6a2.8,2.8 0 0 1 2.8,2.8v2.8a2.8,2.8 0 0 1 -2.8,2.8H58a2.8,2.8 0 0 1 -2.8,-2.8v-2.8a2.8,2.8 0 0 1 2.8,-2.8z" />
+    <path
+        android:fillColor="#FBBF24"
+        android:pathData="M70.1,62.4h4.6a2.8,2.8 0 0 1 2.8,2.8v2.8a2.8,2.8 0 0 1 -2.8,2.8h-4.6a2.8,2.8 0 0 1 -2.8,-2.8v-2.8a2.8,2.8 0 0 1 2.8,-2.8z" />
+    <!-- Keys: third row -->
+    <path
+        android:fillColor="#C4D2E4"
+        android:pathData="M33.8,73.2h4.6a2.8,2.8 0 0 1 2.8,2.8v2.8a2.8,2.8 0 0 1 -2.8,2.8h-4.6a2.8,2.8 0 0 1 -2.8,-2.8v-2.8a2.8,2.8 0 0 1 2.8,-2.8z" />
+    <path
+        android:fillColor="#C4D2E4"
+        android:pathData="M45.9,73.2h4.6a2.8,2.8 0 0 1 2.8,2.8v2.8a2.8,2.8 0 0 1 -2.8,2.8h-4.6a2.8,2.8 0 0 1 -2.8,-2.8v-2.8a2.8,2.8 0 0 1 2.8,-2.8z" />
+    <path
+        android:fillColor="#C4D2E4"
+        android:pathData="M58,73.2h4.6a2.8,2.8 0 0 1 2.8,2.8v2.8a2.8,2.8 0 0 1 -2.8,2.8H58a2.8,2.8 0 0 1 -2.8,-2.8v-2.8a2.8,2.8 0 0 1 2.8,-2.8z" />
+    <path
+        android:fillColor="#F59E0B"
+        android:pathData="M70.1,73.2h4.6a2.8,2.8 0 0 1 2.8,2.8v2.8a2.8,2.8 0 0 1 -2.8,2.8h-4.6a2.8,2.8 0 0 1 -2.8,-2.8v-2.8a2.8,2.8 0 0 1 2.8,-2.8z" />
+    <!-- Equals glyph on the accent key -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M70.6,75.5h3.6a0.8,0.8 0 0 1 0,1.6h-3.6a0.8,0.8 0 0 1 0,-1.6z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M70.6,78.1h3.6a0.8,0.8 0 0 1 0,1.6h-3.6a0.8,0.8 0 0 1 0,-1.6z" />
+</vector>
